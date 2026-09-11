@@ -1,6 +1,10 @@
 # Manual setup
 
-Requires Node.js 24.10 or newer, [GitHub CLI](https://cli.github.com/), and a T3 server with the orchestration HTTP API. Linux is the initial supported platform.
+Requires Linux, Node.js 24.10+, [GitHub CLI](https://cli.github.com/) signed in, and a running local T3 installation. Nothing is published to npm yet.
+
+## Install
+
+Reuse your checkout, or clone into a directory of your choosing:
 
 ```sh
 git clone https://github.com/eimexdev/t3poll.git
@@ -9,67 +13,61 @@ npm ci
 npm run build
 ```
 
-Run `gh auth login` if GitHub CLI is not already signed in. Only GitHub reads are used.
-
-## Connect T3
-
-Set the T3 server origin and the path to a file containing its bearer token:
-
-```sh
-export T3POLL_URL="http://127.0.0.1:3773"
-export T3POLL_TOKEN_FILE="$HOME/.config/t3poll/token"
-```
-
-Use your server's actual port. A local setup agent can often discover it; see [agent setup](agent-setup.md). t3poll currently requires this setting explicitly. Remote origins require HTTPS; a local tunnel can use HTTP on loopback. Tokens stay in the protected file, never in MCP arguments or watch output.
-
-If you need a token, T3 v0.0.40 can issue one using the following command. Set `T3_BASE_DIR` to the **existing T3 data directory**, the directory containing `userdata`. This command creates a credential in that environment. Its token has administrative scopes in this T3 release, although t3poll only uses orchestration read/operate access.
-
-```sh
-export T3_BASE_DIR="/path/to/your/existing/t3-home"
-mkdir -p "$HOME/.config/t3poll"
-chmod 700 "$HOME/.config/t3poll"
-umask 077
-t3 auth session issue --base-dir "$T3_BASE_DIR" --label t3poll --ttl 30d --token-only > "$T3POLL_TOKEN_FILE"
-chmod 600 "$T3POLL_TOKEN_FILE"
-```
-
-Use the CLI matching your installed T3 release. If you already have a credential with `orchestration:read` and `orchestration:operate`, use that instead. Replacing the token file rotates credentials for active watches without restarting them.
+Run `gh auth login` if needed. t3poll only reads GitHub.
 
 ## Register MCP
 
-Add this to your Codex MCP configuration, using absolute paths. T3's Codex provider must use the same Codex configuration home. Load the configuration in a new provider session, or reconnect MCP if your client supports it. Keep ongoing work intact.
+Add this entry to the Codex configuration used by T3's provider:
 
 ```toml
 [mcp_servers.t3poll]
 command = "node"
 args = ["/absolute/path/to/t3poll/dist/cli.js", "mcp"]
-
-[mcp_servers.t3poll.env]
-T3POLL_URL = "http://127.0.0.1:3773"
-T3POLL_TOKEN_FILE = "/absolute/path/to/.config/t3poll/token"
 ```
 
-After the client loads the tools, ask the agent to watch your PR. Tool calls look like this:
-
-```text
-list  { "threads": true }
-watch { "pr": "https://github.com/owner/repo/pull/123", "threadId": "<chosen T3 thread ID>" }
-list  {}
-stop  { "id": "<watch ID>" }
-```
-
-`list` with `threads=true` shows available thread IDs and titles. Select the destination explicitly. Neither MCP nor cwd reliably identifies the current T3 thread. For a dedicated installation you can set `T3POLL_THREAD_ID` to a fixed destination, then omit `threadId` from calls.
-
-The MCP call returns after the initial GitHub/T3 checks and worker startup. It does not stay open while monitoring. The worker continues when the MCP client disconnects. A skill is unnecessary because the tool descriptions explain the workflow.
+Use an absolute Node path if the provider's PATH differs from your terminal. Load the entry in a new provider session or reconnect MCP. T3 itself does not need restarting.
 
 ## Verify
 
-From the checkout, with the two environment variables above set:
+Call `list` with `threads=true` through MCP, or run from the checkout:
 
 ```sh
 node dist/cli.js list --threads
 ```
 
-This checks the credential and lists available destinations without sending a message. `list` also restarts any saved active watches; on a fresh installation there are none. Verify that the MCP client exposes `watch`, `list`, and `stop` after loading its configuration.
+This discovers T3 and creates a credential if needed, then lists destination threads. It sends no messages. `list` can also restart existing saved watches. The MCP client should expose `watch`, `list`, and `stop`.
 
-For a global `t3poll` terminal command, optionally run `npm link`. MCP uses the absolute script path and does not need it. Your terminal needs the connection variables too; the MCP configuration only supplies them to MCP.
+Ask the agent to watch a PR and select its destination thread. Thread selection remains explicit; cwd does not identify a conversation.
+
+## Automatic connection
+
+Discovery checks `T3CODE_HOME`, or `~/.t3` by default, and `.t3` directories in the current directory and its parents. It reads `userdata/server-runtime.json` and verifies the live process, its owner, installed T3 CLI, and data directory. Stale files are ignored.
+
+The matching T3 CLI issues a 30-day credential. t3poll verifies it before saving it with owner-only permissions under `T3POLL_HOME/credentials`. It replaces managed credentials on use within one day of expiration, or after expiration. MCP and the worker coordinate replacement across processes. Failed replacement preserves the previous token and continues using it until expiration, retrying renewal after five minutes; no other service needs to run. Previous successfully used sessions expire naturally. A newly issued session that fails verification is revoked. Failed revocation is recorded and retried before issuing another session.
+
+This T3 CLI issues administrative scopes. t3poll uses orchestration read/operate access. Manual token files are neither adopted nor renewed automatically.
+
+## Select an instance or use manual credentials
+
+For multiple local instances, add the selected home, the directory containing `userdata`:
+
+```toml
+[mcp_servers.t3poll.env]
+T3POLL_BASE_DIR = "/absolute/path/to/t3-home"
+```
+
+`T3POLL_URL` can also select a discovered instance by origin. Credentials for different homes/origins are stored separately. Saved watches stay attached to their original origin; a server port change requires registering the watch again.
+
+Automatic setup supports installed T3 Node CLI processes with the `userdata` layout. Source runners, the older `dev` layout, and remote connections use explicit settings instead:
+
+```toml
+[mcp_servers.t3poll.env]
+T3POLL_URL = "http://127.0.0.1:3773"
+T3POLL_TOKEN_FILE = "/absolute/path/to/token"
+```
+
+For a standard `userdata` installation, the matching CLI can issue a manual token with `t3 auth session issue --base-dir /path/to/t3-home --label t3poll --ttl 30d --token-only`. Capture stdout directly into an owner-only file, never chat or Git. Other layouts require that version's directory options. Remote origins require HTTPS.
+
+## Optional terminal command
+
+Run `npm link` if you want a global `t3poll` command. MCP does not need it. Optional connection overrides must also be set in the terminal when using the CLI.

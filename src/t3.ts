@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { renewManaged } from "./setup.js";
 import { readToken } from "./config.js";
 import type { Command } from "./model.js";
 
@@ -74,6 +75,7 @@ export class T3 {
     readonly tokenFile: string,
   ) {}
   async request(path: string, command?: Command): Promise<unknown> {
+    await renewManaged(this.tokenFile, this.origin);
     const response = await fetch(`${this.origin}${path}`, {
       method: command ? "POST" : "GET",
       headers: {

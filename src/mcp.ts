@@ -32,7 +32,7 @@ export function createMcp(service: Service): McpServer {
     "watch",
     {
       description:
-        "Watch a GitHub PR for new comments, reviews, CI results, commits, or closure. Starts a background worker and returns after registration, without holding a tool call open. Updates wake the explicitly selected T3 thread. Use list with threads=true if you need to select a thread; never guess from cwd. Does not act on the PR or replay existing feedback. Watches expire after 24 hours.",
+        "Automatically connects to local T3 and creates a credential on first use. Watch a GitHub PR for new comments, reviews, CI results, commits, or closure. Starts a background worker and returns after registration, without holding a tool call open. Updates wake the explicitly selected T3 thread. Use list with threads=true if you need to select a thread; never guess from cwd. Does not act on the PR or replay existing feedback. Watches expire after 24 hours.",
       inputSchema: watchInput.shape,
       annotations: {
         readOnlyHint: false,
@@ -47,7 +47,7 @@ export function createMcp(service: Service): McpServer {
     "list",
     {
       description:
-        "List t3poll watches, errors, pending deliveries, and worker status. Restarts a missing worker for saved active watches. Set threads=true to list destination T3 thread IDs and titles.",
+        "List t3poll watches, errors, pending deliveries, and worker status. Restarts a missing worker for saved active watches. Set threads=true to list destination T3 thread IDs and titles; this automatically discovers local T3 and creates a credential on first use.",
       inputSchema: { threads: z.boolean().default(false) },
       annotations: {
         readOnlyHint: false,

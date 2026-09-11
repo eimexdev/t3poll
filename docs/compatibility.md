@@ -43,3 +43,9 @@ This proves the protocol and process flow without spending model tokens. It does
 ## Steering evidence
 
 [Codex 0.153.2's active-turn test](https://github.com/openai/codex/blob/rust-v0.153.2/codex-rs/app-server/tests/suite/v2/turn_start.rs) includes `turn_start_steers_active_turn_and_returns_active_turn_id`. T3's `CodexSessionRuntime.sendTurn` forwards normal message commands to that operation. The isolated proof also sends a second update while its scripted provider is running. That verifies T3 forwarding; the upstream Codex test establishes same-turn semantics.
+
+## Automatic setup
+
+Tested against an isolated copy of T3 `0.0.41-nightly.20260910.1507` on Linux. The proof starts MCP without URL/token configuration, discovers the instance, creates and verifies its credential, and forces credential renewal from the detached worker before a second delivery. A fresh CLI process then reuses the connection. No running user server or real model is used.
+
+Unit/process tests additionally cover simultaneous first use across processes, expired credential replacement, failed issuance/verification preserving the token, stale process state, ambiguous instances, and manual credential overrides. Discovery requires Linux `/proc` and an installed T3 `dist/bin.mjs` process with `userdata` runtime state. Other layouts retain the manual connection path.

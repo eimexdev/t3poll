@@ -12,7 +12,8 @@ const help = `t3poll — watch a GitHub PR and wake a T3 thread
   t3poll stop <watch-id>              Stop a watch
 
 Options: --interval <seconds> (15–3600, default 60)
-Environment: T3POLL_URL, T3POLL_TOKEN_FILE, optional T3POLL_THREAD_ID
+Local T3 connection and credentials are set up automatically.
+Overrides: T3POLL_BASE_DIR, T3POLL_URL, T3POLL_TOKEN_FILE, T3POLL_THREAD_ID
 State: T3POLL_HOME (default ~/.local/share/t3poll)
 
 watch automatically starts a background worker. No skill or service setup required.

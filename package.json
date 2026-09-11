@@ -25,7 +25,8 @@
     "check": "tsc --noEmit",
     "test": "npm run build && node --import tsx --test tests/*.test.ts",
     "format": "prettier --write src tests scripts README.md docs package.json tsconfig.json",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "setup:mock": "tsx scripts/setup-wizard.prototype.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
@@ -33,6 +34,7 @@
     "zod": "4.6.2"
   },
   "devDependencies": {
+    "@clack/prompts": "1.8.0",
     "@types/node": "24.13.4",
     "prettier": "3.9.6",
     "tsx": "4.23.13",

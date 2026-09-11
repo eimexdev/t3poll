@@ -15,6 +15,14 @@ if (process.argv.includes("auth")) {
     console.error("secret-that-must-not-escape");
     process.exit(1);
   }
+  if (process.argv.includes("revoke")) {
+    if (existsSync(join(base, "fail-revoke"))) process.exit(1);
+    appendFileSync(
+      join(base, "revoked"),
+      process.argv[process.argv.indexOf("revoke") + 1] + "\n",
+    );
+    process.exit(0);
+  }
   const sessionId = randomUUID();
   const token = `test-${sessionId}`;
   appendFileSync(join(base, "issued"), `${token}\n`);

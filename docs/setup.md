@@ -43,7 +43,7 @@ Ask the agent to watch a PR and select its destination thread. Thread selection 
 
 Discovery checks `T3CODE_HOME`, or `~/.t3` by default, and `.t3` directories in the current directory and its parents. It reads `userdata/server-runtime.json` and verifies the live process, its owner, installed T3 CLI, and data directory. Stale files are ignored.
 
-The matching T3 CLI issues a 30-day credential. t3poll verifies it before saving it with owner-only permissions under `T3POLL_HOME/credentials`. It replaces managed credentials on use within one day of expiration, or after expiration. MCP and the worker coordinate replacement across processes. Failed replacement preserves the previous token and continues using it until expiration, retrying renewal after five minutes; no other service needs to run. Previous sessions expire naturally.
+The matching T3 CLI issues a 30-day credential. t3poll verifies it before saving it with owner-only permissions under `T3POLL_HOME/credentials`. It replaces managed credentials on use within one day of expiration, or after expiration. MCP and the worker coordinate replacement across processes. Failed replacement preserves the previous token and continues using it until expiration, retrying renewal after five minutes; no other service needs to run. Previous successfully used sessions expire naturally. A newly issued session that fails verification is revoked. Failed revocation is recorded and retried before issuing another session.
 
 This T3 CLI issues administrative scopes. t3poll uses orchestration read/operate access. Manual token files are neither adopted nor renewed automatically.
 

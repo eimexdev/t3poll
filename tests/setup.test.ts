@@ -268,3 +268,35 @@ test("worker requests repair empty and insecure managed token files before expir
   assert.equal(f.issued(), 3);
   assert.equal(statSync(c.tokenFile).mode & 0o777, 0o600);
 });
+
+test("failed verification revokes its session and retries failed cleanup before issuing again", async (t) => {
+  const f = await fixture(t);
+  const c = await connection(f.config);
+  const path = `${c.tokenFile}.managed.json`;
+  const metadata = JSON.parse(readFileSync(path, "utf8"));
+  metadata.expiresAt = new Date(0).toISOString();
+  writeFileSync(path, JSON.stringify(metadata));
+  writeFileSync(join(f.base, "reject"), "");
+  await assert.rejects(renewManaged(c.tokenFile, f.origin), /preserved/);
+  const issuedId = readFileSync(join(f.base, "issued"), "utf8")
+    .trim()
+    .split("\n")[1]!
+    .slice(5);
+  assert.equal(readFileSync(join(f.base, "revoked"), "utf8").trim(), issuedId);
+  assert.equal(existsSync(`${c.tokenFile}.pending-session.json`), false);
+  writeFileSync(join(f.base, "fail-revoke"), "");
+  await assert.rejects(renewManaged(c.tokenFile, f.origin), /preserved/);
+  assert.equal(f.issued(), 3);
+  assert.ok(existsSync(`${c.tokenFile}.pending-session.json`));
+  await assert.rejects(renewManaged(c.tokenFile, f.origin), /preserved/);
+  assert.equal(f.issued(), 3);
+  rmSync(join(f.base, "fail-revoke"));
+  rmSync(join(f.base, "reject"));
+  await renewManaged(c.tokenFile, f.origin);
+  assert.equal(f.issued(), 4);
+  assert.equal(
+    readFileSync(join(f.base, "revoked"), "utf8").trim().split("\n").length,
+    2,
+  );
+  assert.equal(existsSync(`${c.tokenFile}.pending-session.json`), false);
+});

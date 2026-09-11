@@ -191,12 +191,39 @@ async function verify(origin: string, token: string): Promise<void> {
 
 async function issue(
   server: LocalT3,
+  tokenFile: string,
 ): Promise<{ token: string; metadata: Managed }> {
+  const pendingPath = `${tokenFile}.pending-session.json`;
+  let sessionId: string | undefined;
+  // Pin userdata and clear development settings inherited from an unrelated shell.
+  const env = { ...process.env };
+  delete env.VITE_DEV_SERVER_URL;
+  env.T3CODE_HOME = server.baseDir;
+  const cleanup = async () => {
+    if (!sessionId) return;
+    await exec(
+      server.node,
+      [
+        server.cli,
+        "auth",
+        "session",
+        "revoke",
+        sessionId,
+        "--base-dir",
+        server.baseDir,
+      ],
+      { env, timeout: 30_000, maxBuffer: 64 * 1024 },
+    );
+    rmSync(pendingPath, { force: true });
+    sessionId = undefined;
+  };
   try {
-    // Pin userdata and clear development settings inherited from an unrelated shell.
-    const env = { ...process.env };
-    delete env.VITE_DEV_SERVER_URL;
-    env.T3CODE_HOME = server.baseDir;
+    if (existsSync(pendingPath)) {
+      sessionId = z
+        .object({ sessionId: z.string().min(1) })
+        .parse(JSON.parse(readFileSync(pendingPath, "utf8"))).sessionId;
+      await cleanup();
+    }
     const { stdout } = await exec(
       server.node,
       [
@@ -221,6 +248,8 @@ async function issue(
         expiresAt: z.string().datetime(),
       })
       .parse(JSON.parse(stdout));
+    sessionId = issued.sessionId;
+    atomic(pendingPath, JSON.stringify({ sessionId }));
     if (Date.parse(issued.expiresAt) <= Date.now() + renewalWindow)
       throw new Error("Invalid lifetime");
     await verify(server.origin, issued.token);
@@ -234,6 +263,8 @@ async function issue(
       },
     };
   } catch {
+    // Keep the record when revocation fails; the next attempt cleans up before issuing.
+    await cleanup().catch(() => {});
     throw new Error(
       "Could not create and verify a T3 credential. Check the local T3 installation and its auth CLI. Existing credentials were preserved.",
     );
@@ -269,9 +300,10 @@ async function ensureCredential(
         throw new Error(
           "Cannot renew credential: the selected local T3 server is unavailable or its address changed.",
         );
-      const issued = await issue(server);
+      const issued = await issue(server, tokenFile);
       atomic(tokenFile, `${issued.token}\n`);
       atomic(metaPath, `${JSON.stringify(issued.metadata)}\n`);
+      rmSync(`${tokenFile}.pending-session.json`, { force: true });
     } catch (error) {
       if (!metadata || Date.parse(metadata.expiresAt) <= Date.now())
         throw error;

@@ -1,3 +1,4 @@
+// Installer capability fixture: T3CODE_CODEX_LAUNCH_ARGS
 // Local process/credential fixture. Copied into a temporary t3 package by setup tests.
 import { createServer } from "node:http";
 import {

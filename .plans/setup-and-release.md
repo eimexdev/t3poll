@@ -1,6 +1,6 @@
 # Setup and release work order
 
-Status: Windows x64 support is implemented and tested on Gideon; see [verification](../docs/compatibility.md#windows-verification). The wizard, automatic update handoff, and release workflow remain planned from the September 11 setup discussion.
+Status: Windows x64 support is implemented and tested on Gideon; see [verification](../docs/compatibility.md#windows-verification). The setup installer is implemented; see [installer usage](../docs/installer.md). Automatic update handoff and the release workflow remain planned.
 
 ## Order of work
 
@@ -24,7 +24,7 @@ Provide instance selection and custom-location fallback, resolve the selected Co
 
 Default to T3-only tool availability. Update both Codex MCP registration and the selected T3 provider's launch arguments, checking environment overrides. Keep each installation's destination separate when multiple T3 instances share Codex configuration. See [T3 scoping](t3-only-mcp.md).
 
-Default to the stable update channel, with explicit nightly opt-in. Persist the selected channel independently of the exact package version used to run setup. Do not pin ordinary installations to the setup version. An explicit version may remain an advanced troubleshooting option.
+Inherit the release channel from the invoked package version; do not ask a channel question. Stable packages configure latest and nightly packages configure nightly. Do not pin ordinary installations to the setup version. A local runtime path supports checkout use before publication.
 
 Verification must not send messages or restart existing watches as a side effect. Preserve running T3 conversations and state which checks require a fresh provider session.
 

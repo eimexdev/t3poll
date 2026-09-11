@@ -81,3 +81,13 @@ node scripts/prove-t3.mjs
 ```
 
 For an npm-installed T3 CLI, set only `T3POLL_TEST_T3_BIN` to its `dist/bin.mjs`. To check real Codex tool scoping without a model call, set `T3POLL_TEST_CODEX_BIN` to the installed native `codex.exe` and run `node scripts/prove-codex.mjs`. This creates a disposable Codex home, verifies no t3poll tools are exposed by default, then verifies `list`, `stop`, and `watch` with `-c mcp_servers.t3poll.enabled=true`. It does not edit the user's Codex or T3 configuration. Both proof scripts accept `T3POLL_TEST_CLI` to exercise a separately installed tarball's `dist/cli.js` instead of the checkout build.
+
+## Setup installer verification
+
+Verified September 11, 2026 with 45 tests: all passed on Gideon Windows x64; 43 passed on Linux with the two Windows-only checks skipped. Installer coverage includes no-write dry runs, separate instance destinations, quoted launch arguments, environment precedence, private backups, stale reviews, rollback after failed credential verification, and idempotent reruns. Type checking passes.
+
+The installer completed against isolated copies of T3 `0.0.41-nightly.20260911.1551` on Linux and the packaged Windows desktop app, using real Codex for the executable check. It created managed credentials, verified MCP connectivity, and reran without duplicate config. No threads or messages were created. The real Codex proof now invokes the installer instead of writing MCP config by hand; it confirms the generated entry is disabled by default and exposes all three tools through the generated T3 launch arguments.
+
+Packed installs in paths containing spaces and non-ASCII characters passed the installer and real Codex scoping proof on Linux and Windows. These checks use `--runtime-path` to exercise the packed CLI before npm publication. Public npm channel resolution and automatic worker handoff remain release work; the installer does not claim to hot-update running workers.
+
+To repeat the stock installer proof, set `T3POLL_TEST_T3_BIN` and `T3POLL_TEST_CODEX_BIN`, optionally `T3POLL_TEST_T3_RUNTIME` for Electron, and run `node scripts/prove-installer.mjs`. All configuration is disposable. `scripts/prove-codex.mjs` separately verifies actual tool availability without model calls.

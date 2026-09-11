@@ -97,7 +97,11 @@ export class Service {
     };
   }
   async list(includeThreads = false) {
-    const worker = await ensureWorker(this.store);
+    // Status remains inspectable even when a broken installation cannot start a worker.
+    const worker = await ensureWorker(this.store).catch((error: unknown) => ({
+      pid: null,
+      error: error instanceof Error ? error.message : "Worker startup failed.",
+    }));
     const watches = this.store.all().map(publicWatch);
     const threads = includeThreads
       ? (

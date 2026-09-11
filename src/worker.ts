@@ -43,7 +43,7 @@ export async function tick(
   deps = dependencies,
   owns = () => true,
 ): Promise<void> {
-  let watch = store.get(id);
+  const watch = store.get(id);
   if (!watch || !["watching", "finishing"].includes(watch.status) || !owns())
     return;
   if (deps.now() >= watch.expiresAt) {
@@ -59,15 +59,14 @@ export async function tick(
       if (!owns()) return;
       if (watch.snapshot) {
         // Pending check results can become stale during a busy turn or after a new head.
+        const pendingKeys = new Set(watch.pending.map((change) => change.key));
         watch.pending = watch.pending.filter(
           (change) => !/^(check|status):/.test(change.key),
         );
         const changes = changesBetween(watch.snapshot, snapshot, watch.pr);
         const retainedChecks = Object.entries(snapshot.entries)
           .filter(
-            ([key, entry]) =>
-              entry.kind === "check" &&
-              store.get(id)?.pending.some((change) => change.key === key),
+            ([key, entry]) => entry.kind === "check" && pendingKeys.has(key),
           )
           .map(([key, entry]) => ({ key, text: entry.label, url: entry.url }));
         watch.pending = mergeChanges(watch.pending, [
@@ -99,6 +98,10 @@ export async function tick(
   }
   if (deps.now() < watch.nextDelivery || !owns()) return;
   try {
+    // An ambiguous request still keeps its IDs, but do not revive an archived destination.
+    // A busy thread may be busy because this very command was accepted, so only the
+    // first submission uses the idle gate below.
+    if (watch.command) await deps.thread(watch);
     if (!watch.command) {
       const thread = await deps.thread(watch);
       if (!owns() || store.get(id)?.revision !== watch.revision) return;

@@ -292,3 +292,62 @@ test("unknown or approval-blocked destination states cannot be treated as idle",
   );
   assert.equal(availability({ ...ready, hasPendingUserInput: true }), "busy");
 });
+
+test("a pending failed check is replaced by its recovery before a busy thread wakes", async (t) => {
+  const f = fixture(t);
+  let conclusion = "failure";
+  f.deps.github = async () => ({
+    ...baseline,
+    entries: {
+      "check:tests": {
+        fingerprint: conclusion,
+        kind: "check",
+        label: `Tests: ${conclusion}`,
+        url: pr,
+      },
+    },
+  });
+  f.deps.thread = async () => ({ ...ready, hasPendingUserInput: true });
+  await tick(f.store, f.watch.id, f.deps);
+  conclusion = "success";
+  f.now.value += 60000;
+  f.deps.thread = async () => ready;
+  await tick(f.store, f.watch.id, f.deps);
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0]!.message.text, /Tests: success/);
+  assert.doesNotMatch(f.sent[0]!.message.text, /Tests: failure/);
+});
+
+test("an archived destination blocks retry without losing the original command", async (t) => {
+  const f = fixture(t);
+  f.deps.github = async () => changed();
+  f.deps.dispatch = async () => {
+    throw new Error("Offline");
+  };
+  await tick(f.store, f.watch.id, f.deps);
+  const original = f.store.get(f.watch.id)!.command;
+  f.now.value += 61000;
+  f.deps.thread = async () => {
+    throw new Error("Destination thread is archived or deleted.");
+  };
+  f.deps.dispatch = async () => {
+    assert.fail("Must not dispatch to archived thread");
+  };
+  await tick(f.store, f.watch.id, f.deps);
+  assert.deepEqual(f.store.get(f.watch.id)!.command, original);
+  assert.match(f.store.get(f.watch.id)!.deliveryError!, /archived/);
+});
+
+test("an accepted delivery is not repeated when the provider later fails", async (t) => {
+  const f = fixture(t);
+  f.deps.github = async () => changed();
+  await tick(f.store, f.watch.id, f.deps);
+  f.now.value += 61000;
+  f.deps.thread = async () => ({
+    ...ready,
+    session: { status: "error", activeTurnId: null },
+  });
+  await tick(f.store, f.watch.id, f.deps);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.store.get(f.watch.id)!.command, null);
+});

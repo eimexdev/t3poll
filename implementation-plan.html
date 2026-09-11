@@ -8,14 +8,14 @@
 </style>
 </head>
 <body><main>
-<div class="label">Revised proposal · September 10, 2026</div>
+<div class="label">Implementation complete · September 11, 2026</div>
 <h1>t3poll</h1>
 <p class="lead">An MCP server and CLI that watch a PR and wake your T3 conversation when something changes.</p>
 <p class="flow">Ask to watch → check GitHub → spot a change → message T3</p>
 <section><h2>What we build</h2>
 <ul>
 <li>MCP tools for <code>watch</code>, <code>list</code>, and <code>stop</code>, plus matching CLI commands: <code>t3poll watch</code>, <code>t3poll list</code>, and <code>t3poll stop</code>.</li>
-<li>A small skill that teaches the agent to register a PR against an explicit T3 thread.</li>
+<li>MCP tool descriptions teach the agent how to register a watch. No skill is required.</li>
 <li>Calling watch through MCP or the CLI automatically starts a background worker if needed, then returns immediately. The worker exits when no active watches or pending deliveries remain.</li>
 <li>A small saved record of watches and delivered changes, with duplicate prevention and retries. Both interfaces use the same watcher.</li>
 </ul>
@@ -38,17 +38,17 @@
 <ol>
 <li><strong>Prove the small loop.</strong> In an isolated T3 instance, run the watch command, let it return, finish the agent turn, and then deliver a simulated PR change.</li>
 <li><strong>Add real monitoring.</strong> Read GitHub, remember what changed, and send one notification per update.</li>
-<li><strong>Make it easy to install.</strong> Provide the MCP server, CLI, skill, and short setup instructions. Test worker startup and exit, stop, restart, duplicate delivery, and offline recovery.</li>
+<li><strong>Make it easy to install.</strong> Provide the MCP server, CLI, and short setup instructions. Test worker startup and exit, stop, restart, duplicate delivery, and offline recovery.</li>
 </ol>
-<p>No dashboard, service manager, or general automation framework. Implementation waits for your approval, and the running T3 server stays untouched.</p>
+<p>No dashboard, service manager, or general automation framework. The implementation and isolated stock-T3 proof are complete. The running T3 server remains untouched. See README.md for setup and docs/compatibility.md for verified behavior.</p>
 </section>
 <details><summary>Sources and remaining uncertainty</summary>
 <ul>
 <li><a href="https://modelcontextprotocol.io/extensions/tasks/overview">MCP Tasks</a>: asynchronous task handles, result retrieval, and explicit client support.</li>
 <li><a href="https://github.com/openai/codex/blob/rust-v0.153.2/codex-rs/app-server/src/request_processors/mcp_event_stream.rs">Codex 0.153.2 event streams</a>: hosted-app restriction. General Tasks-extension support for custom servers was not established by the documentation/source checks.</li>
 <li><a href="https://docs.github.com/en/webhooks/using-webhooks/creating-webhooks">GitHub webhook permissions</a> and <a href="https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/troubleshooting-webhooks">local receiver limitations</a>.</li>
-<li><a href="https://github.com/pingdotgg/t3code/blob/v0.0.40/packages/contracts/src/environmentHttp.ts#L532">T3 v0.0.40 dispatch contract</a>. Worker lifetime, thread binding, and delivery behavior still need the isolated proof.</li>
+<li><a href="https://github.com/pingdotgg/t3code/blob/v0.0.40/packages/contracts/src/environmentHttp.ts#L532">T3 v0.0.40 dispatch contract</a>. Worker lifetime and delivery passed the isolated stock-T3 proof; thread selection remains explicit.</li>
 </ul>
 </details>
-<footer>Plan only. No application code, credentials, or live configuration changed.</footer>
+<footer>Historical design summary. PLAN.md and README.md describe the delivered version. No live configuration changed.</footer>
 </main></body></html>

@@ -13,7 +13,7 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, delimiter } from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
@@ -23,6 +23,10 @@ import { createServer } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Store } from "../dist/store.js";
+
+import { executable } from "../tests/fixtures/executable.mjs";
+import { pathToFileURL } from "node:url";
+import { protectFile } from "../dist/private-files.js";
 
 const exec = promisify(execFile);
 const binary = process.env.T3POLL_TEST_T3_BIN;
@@ -40,17 +44,17 @@ const node = process.execPath;
 const runtime = process.env.T3POLL_TEST_T3_RUNTIME ?? node;
 const providerLog = join(root, "provider.jsonl");
 copyFileSync(resolve("tests/fixtures/codex.mjs"), join(bin, "codex.mjs"));
-const quote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
 const providerErrors = join(root, "provider-errors.log");
-writeFileSync(
-  join(bin, "codex"),
-  `#!/bin/sh\nexec ${quote(node)} ${quote(join(bin, "codex.mjs"))} "$@" 2>>${quote(providerErrors)}\n`,
+const providerBinary = executable(
+  bin,
+  "codex",
+  `import(${JSON.stringify(pathToFileURL(join(bin, "codex.mjs")).href)});`,
 );
-chmodSync(join(bin, "codex"), 0o700);
 const phase = join(root, "phase");
 writeFileSync(phase, "0");
-writeFileSync(
-  join(bin, "gh"),
+executable(
+  bin,
+  "gh",
   `#!${node}
 const fs=require('node:fs');const path=process.argv.at(-1);let result=[[]];
 if (/pulls\\/1$/.test(path)) result={state:'open',merged:false,head:{sha:'a'.repeat(40)}};
@@ -58,10 +62,25 @@ else if(path.includes('/check-runs?')) result=[{check_runs:[]}];
 else if(path.includes('/issues/') && fs.readFileSync(${JSON.stringify(phase)},'utf8')>='1') result=[[{id:42,body:'New feedback '+fs.readFileSync(${JSON.stringify(phase)},'utf8'),html_url:'https://github.com/owner/repo/pull/1#issuecomment-42'}]];
 process.stdout.write(JSON.stringify(result));
 `,
-  { mode: 0o700 },
 );
 const env = {
-  PATH: `${bin}:${dirname(node)}:/usr/bin:/bin`,
+  ...(process.platform === "win32"
+    ? {
+        SystemRoot: process.env.SystemRoot,
+        WINDIR: process.env.WINDIR,
+        ComSpec: process.env.ComSpec,
+        TEMP: root,
+        TMP: root,
+        USERPROFILE: home,
+        APPDATA: join(home, "AppData/Roaming"),
+        LOCALAPPDATA: join(home, "AppData/Local"),
+      }
+    : {}),
+  PATH: [
+    bin,
+    dirname(node),
+    process.platform === "win32" ? process.env.PATH : "/usr/bin:/bin",
+  ].join(delimiter),
   HOME: home,
   CODEX_HOME: join(home, ".codex"),
   XDG_CONFIG_HOME: join(home, ".config"),
@@ -76,12 +95,12 @@ writeFileSync(
   join(base, "userdata/settings.json"),
   JSON.stringify({
     providers: {
-      codex: { binaryPath: join(bin, "codex"), homePath: env.CODEX_HOME },
+      codex: { binaryPath: providerBinary, homePath: env.CODEX_HOME },
     },
     providerInstances: {
       codex: {
         driver: "codex",
-        config: { binaryPath: join(bin, "codex"), homePath: env.CODEX_HOME },
+        config: { binaryPath: providerBinary, homePath: env.CODEX_HOME },
         environment: Object.entries(env).map(([name, value]) => ({
           name,
           value,
@@ -134,6 +153,7 @@ try {
   token = issued.stdout.trim();
   const tokenFile = join(root, "token");
   writeFileSync(tokenFile, token, { mode: 0o600 });
+  protectFile(tokenFile);
   server = spawn(
     runtime,
     [
@@ -214,7 +234,7 @@ try {
   await client.connect(
     new StdioClientTransport({
       command: node,
-      args: [resolve("dist/cli.js"), "mcp"],
+      args: [resolve(process.env.T3POLL_TEST_CLI ?? "dist/cli.js"), "mcp"],
       env: {
         ...env,
         T3POLL_HOME: pollHome,
@@ -296,7 +316,11 @@ try {
   // A fresh CLI process uses the saved automatic connection and credential.
   const checked = await exec(
     node,
-    [resolve("dist/cli.js"), "list", "--threads"],
+    [
+      resolve(process.env.T3POLL_TEST_CLI ?? "dist/cli.js"),
+      "list",
+      "--threads",
+    ],
     {
       env: { ...env, T3POLL_HOME: pollHome, T3POLL_BASE_DIR: base },
       cwd: work,
@@ -365,10 +389,23 @@ try {
   }
   if (server && server.exitCode === null) {
     const exited = new Promise((r) => server.once("exit", r));
-    server.kill("SIGTERM");
+    if (process.platform === "win32") {
+      // Native T3 can own resource-monitor and provider children on Windows.
+      await exec(join(process.env.SystemRoot, "System32", "taskkill.exe"), [
+        "/pid",
+        String(server.pid),
+        "/t",
+        "/f",
+      ]);
+    } else server.kill("SIGTERM");
     const kill = setTimeout(() => server.kill("SIGKILL"), 10000);
     await exited;
     clearTimeout(kill);
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 200,
+  });
 }

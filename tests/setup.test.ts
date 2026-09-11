@@ -1,3 +1,5 @@
+import { assertPrivateFile } from "../src/private-files.js";
+import { makePublic } from "./fixtures/permissions.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -7,7 +9,6 @@ import {
   writeFileSync,
   readFileSync,
   rmSync,
-  statSync,
   existsSync,
   symlinkSync,
   realpathSync,
@@ -30,7 +31,7 @@ async function fixture(
   t: { after: (fn: () => Promise<void>) => void },
   launch: "direct" | "absolute-link" | "relative-link" = "direct",
 ) {
-  const root = mkdtempSync(join(tmpdir(), "t3poll setup space-"));
+  const root = mkdtempSync(join(tmpdir(), "t3poll setup café space-"));
   const base = join(root, "t3");
   const home = join(root, "poll");
   const pkg = join(root, "package");
@@ -43,10 +44,17 @@ async function fixture(
   const cli = join(pkg, "dist/bin.mjs");
   copyFileSync(resolve("tests/fixtures/local-t3.mjs"), cli);
   const link = join(root, "t3-bin");
-  symlinkSync(cli, link);
+  if (launch !== "direct") {
+    if (process.platform === "win32") symlinkSync(pkg, link, "junction");
+    else symlinkSync(cli, link);
+  }
   const command =
     launch === "direct" ? cli : launch === "absolute-link" ? link : "./t3-bin";
-  const child = spawn(process.execPath, [command, "serve"], {
+  const entry =
+    process.platform === "win32" && launch !== "direct"
+      ? join(command, "dist", "bin.mjs")
+      : command;
+  const child = spawn(process.execPath, [entry, "serve"], {
     cwd: root,
     env: { ...process.env, T3CODE_HOME: base },
     stdio: ["ignore", "pipe", "pipe"],
@@ -77,7 +85,7 @@ test("first use discovers local T3, creates a private verified credential, and r
   );
   assert.equal(f.issued(), 1);
   assert.ok(results.every((r) => r.tokenFile === results[0]!.tokenFile));
-  assert.equal(statSync(results[0]!.tokenFile).mode & 0o777, 0o600);
+  assert.doesNotThrow(() => assertPrivateFile(results[0]!.tokenFile));
   assert.deepEqual(await new T3(f.origin, results[0]!.tokenFile).threads(), []);
   const service = new Service(f.config);
   try {
@@ -172,7 +180,11 @@ test("discovery reports ambiguity and accepts a URL selector", async (t) => {
   mkdirSync(workspace);
   // A second independently configured instance appears in an ancestor .t3 directory.
   const { symlinkSync } = await import("node:fs");
-  symlinkSync(second.base, join(workspace, ".t3"));
+  symlinkSync(
+    second.base,
+    join(workspace, ".t3"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
   process.env.T3CODE_HOME = first.base;
   process.chdir(workspace);
   try {
@@ -208,7 +220,7 @@ test("renewal starts before expiration, repairs a missing token, and recovers an
   rmSync(c.tokenFile);
   await new T3(f.origin, c.tokenFile).threads();
   assert.equal(f.issued(), 3);
-  assert.equal(statSync(path).mode & 0o777, 0o600);
+  assert.doesNotThrow(() => assertPrivateFile(path));
 });
 
 test("a runtime file pointing at another T3 data directory cannot mint credentials", async (t) => {
@@ -263,11 +275,10 @@ test("worker requests repair empty and insecure managed token files before expir
   writeFileSync(c.tokenFile, "");
   assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
   assert.equal(f.issued(), 2);
-  const { chmodSync } = await import("node:fs");
-  chmodSync(c.tokenFile, 0o644);
+  makePublic(c.tokenFile);
   assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
   assert.equal(f.issued(), 3);
-  assert.equal(statSync(c.tokenFile).mode & 0o777, 0o600);
+  assert.doesNotThrow(() => assertPrivateFile(c.tokenFile));
 });
 
 test("failed verification revokes its session and retries failed cleanup before issuing again", async (t) => {

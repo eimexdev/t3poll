@@ -1,3 +1,4 @@
+import { privateDirectory, protectFile } from "./private-files.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
@@ -6,8 +7,6 @@ import { dirname, join, resolve } from "node:path";
 import {
   readFileSync,
   realpathSync,
-  mkdirSync,
-  chmodSync,
   writeFileSync,
   renameSync,
   rmSync,
@@ -74,35 +73,41 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
     const { args, env, cwd, executable } = readLocalProcess(state.pid);
     if (!args[1] || args.includes("auth")) return;
     let cli: string;
+    const resources =
+      process.platform === "darwin"
+        ? join(dirname(dirname(executable)), "Resources")
+        : join(dirname(executable), "resources");
+    const archive = ["server.asar", "app.asar"]
+      .map((name) => join(resources, name))
+      .find((path) => args[1] === join(path, "apps/server/dist/bin.mjs"));
     const electron =
-      process.platform === "darwin" &&
-      executable.includes(".app/Contents/MacOS/");
+      (process.platform === "darwin" || process.platform === "win32") &&
+      env.ELECTRON_RUN_AS_NODE === "1" &&
+      archive !== undefined;
     if (electron) {
-      const contents = dirname(dirname(executable));
-      const archive = join(contents, "Resources/app.asar");
-      cli = join(archive, "apps/server/dist/bin.mjs");
-      if (args[1] !== cli || env.ELECTRON_RUN_AS_NODE !== "1") return;
+      cli = join(archive!, "apps/server/dist/bin.mjs");
       const name = execFileSync(
         executable,
         [
           "-e",
           "process.stdout.write(require(process.argv[1]).name)",
-          join(archive, "package.json"),
+          join(archive!, "package.json"),
         ],
         {
           encoding: "utf8",
           timeout: 5000,
+          windowsHide: true,
           env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
         },
       );
-      if (name !== "t3code") return;
-      // Desktop bootstrap passes its home through a private pipe, not argv/env.
-      // Verify the selected database is actually open in this server process.
+      if (name !== "t3code" && name !== "t3code-server") return;
+      // Desktop bootstrap may pass its home through a pipe. Verify the live
+      // process has this home's database open before running its auth CLI.
       if (!hasOpenFile(state.pid, join(baseDir, "userdata/state.sqlite")))
         return;
     } else {
       cli = realpathSync(resolve(cwd, args[1]));
-      if (!cli.endsWith("/dist/bin.mjs")) return;
+      if (!cli.endsWith(join("dist", "bin.mjs"))) return;
       const pkg = JSON.parse(
         readFileSync(join(dirname(cli), "../package.json"), "utf8"),
       );
@@ -116,7 +121,11 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
       baseFlag ??
       (flagIndex >= 0 ? args[flagIndex + 1] : undefined) ??
       env.T3CODE_HOME ??
-      join(env.HOME ?? homedir(), ".t3");
+      join(
+        (process.platform === "win32" ? env.USERPROFILE : env.HOME) ??
+          homedir(),
+        ".t3",
+      );
     if (
       !electron &&
       realpathSync(resolve(cwd, processHome)) !== realpathSync(baseDir)
@@ -159,6 +168,7 @@ function atomic(path: string, content: string) {
   const temp = `${path}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temp, content, { mode: 0o600, flag: "wx" });
+    protectFile(temp);
     renameSync(temp, path);
   } finally {
     rmSync(temp, { force: true });
@@ -169,10 +179,10 @@ async function withLock<T>(
   directory: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  privateDirectory(directory);
   const path = join(directory, "setup.sqlite");
   const db = new DatabaseSync(path);
-  chmodSync(path, 0o600);
+  protectFile(path);
   db.exec(
     "PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS setup_lock (id INTEGER PRIMARY KEY, owner TEXT, expires INTEGER)",
   );
@@ -235,7 +245,7 @@ async function issue(
         "--base-dir",
         server.baseDir,
       ],
-      { env, timeout: 30_000, maxBuffer: 64 * 1024 },
+      { env, timeout: 30_000, maxBuffer: 64 * 1024, windowsHide: true },
     );
     rmSync(pendingPath, { force: true });
     sessionId = undefined;
@@ -262,7 +272,7 @@ async function issue(
         "30d",
         "--json",
       ],
-      { env, timeout: 30_000, maxBuffer: 64 * 1024 },
+      { env, timeout: 30_000, maxBuffer: 64 * 1024, windowsHide: true },
     );
     const issued = z
       .object({

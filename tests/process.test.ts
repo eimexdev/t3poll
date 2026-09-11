@@ -1,8 +1,9 @@
+import { executable } from "./fixtures/executable.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, delimiter } from "node:path";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { execFile } from "node:child_process";
@@ -32,8 +33,9 @@ test(
     mkdirSync(bin);
     const phaseFile = join(home, "phase");
     writeFileSync(phaseFile, "0");
-    writeFileSync(
-      join(bin, "gh"),
+    executable(
+      bin,
+      "gh",
       `#!${process.execPath}
 const fs=require('node:fs');
 const phase=Number(fs.readFileSync(${JSON.stringify(phaseFile)},'utf8'));
@@ -44,7 +46,6 @@ else if(path.includes('/check-runs?')) result=[{check_runs:[]}];
 else if(path.includes('/issues/') && phase) result=[[{id:phase,body:'Do not copy this untrusted text into the wakeup',html_url:'https://github.com/owner/repo/pull/1#issuecomment-'+phase}]];
 process.stdout.write(JSON.stringify(result));
 `,
-      { mode: 0o700 },
     );
     const tokenFile = join(home, "token");
     writeFileSync(tokenFile, "fixture-token", { mode: 0o600 });
@@ -88,7 +89,7 @@ process.stdout.write(JSON.stringify(result));
     assert.ok(address && typeof address !== "string");
     const env = {
       ...process.env,
-      PATH: `${bin}:${process.env.PATH}`,
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
       T3POLL_HOME: home,
       T3POLL_URL: `http://127.0.0.1:${address.port}`,
       T3POLL_TOKEN_FILE: tokenFile,

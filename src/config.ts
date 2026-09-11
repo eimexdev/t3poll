@@ -4,6 +4,7 @@ import { readFileSync, statSync } from "node:fs";
 
 export type Config = {
   home: string;
+  baseDir?: string;
   origin?: string;
   tokenFile?: string;
   threadId?: string;
@@ -19,6 +20,7 @@ export function configFromEnv(env = process.env): Config {
       ? resolve(env.T3POLL_TOKEN_FILE)
       : undefined,
     threadId: env.T3POLL_THREAD_ID,
+    baseDir: env.T3POLL_BASE_DIR ? resolve(env.T3POLL_BASE_DIR) : undefined,
   };
 }
 
@@ -38,17 +40,6 @@ export function validateOrigin(value: string): string {
     );
   }
   return url.origin;
-}
-
-export function connection(config: Config): {
-  origin: string;
-  tokenFile: string;
-} {
-  if (!config.origin || !config.tokenFile)
-    throw new Error(
-      "Set T3POLL_URL and T3POLL_TOKEN_FILE before watching. See README setup.",
-    );
-  return { origin: config.origin, tokenFile: config.tokenFile };
 }
 
 export function readToken(path: string): string {

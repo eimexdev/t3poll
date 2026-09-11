@@ -188,12 +188,16 @@ try {
       env: {
         ...env,
         T3POLL_HOME: pollHome,
-        T3POLL_URL: origin,
-        T3POLL_TOKEN_FILE: tokenFile,
       },
       stderr: "pipe",
     }),
   );
+  const connected = await client.callTool({
+    name: "list",
+    arguments: { threads: true },
+  });
+  assert.ok(!connected.isError, JSON.stringify(connected));
+  assert.ok(connected.structuredContent.threads.some((t) => t.id === threadId));
   const registered = await client.callTool({
     name: "watch",
     arguments: { pr: "https://github.com/owner/repo/pull/1", threadId },
@@ -229,6 +233,12 @@ try {
   );
   writeFileSync(phase, "2");
   const activeWatch = store.get(id);
+  // Force renewal inside the detached worker without a setup tool or manual token.
+  const managedPath = `${activeWatch.tokenFile}.managed.json`;
+  const oldToken = readFileSync(activeWatch.tokenFile, "utf8");
+  const metadata = JSON.parse(readFileSync(managedPath, "utf8"));
+  metadata.expiresAt = new Date(0).toISOString();
+  writeFileSync(managedPath, JSON.stringify(metadata));
   activeWatch.nextPoll = 0;
   activeWatch.nextDelivery = 0;
   assert.ok(store.save(activeWatch));
@@ -250,6 +260,14 @@ try {
       .testWasRunning,
     true,
   );
+  assert.notEqual(readFileSync(activeWatch.tokenFile, "utf8"), oldToken);
+  // A fresh CLI process uses the saved automatic connection and credential.
+  const checked = await exec(
+    node,
+    [resolve("dist/cli.js"), "list", "--threads"],
+    { env: { ...env, T3POLL_HOME: pollHome }, timeout: 30000 },
+  );
+  assert.ok(JSON.parse(checked.stdout).threads.some((t) => t.id === threadId));
   // Exact same dispatch must not append another message or invoke another provider turn.
   const body = {
     type: "thread.turn.start",
@@ -277,7 +295,7 @@ try {
   store.stop(id);
   await until(() => !store.worker());
   console.log(
-    "PASS: stock T3 accepted MCP-started background delivery after MCP disconnect, delivered another update during a running scripted Codex turn, completed the turn, and deduplicated an identical command.",
+    "PASS: automatic discovery, initial credential creation, worker renewal, and CLI reuse succeeded; stock T3 accepted MCP-started background delivery after MCP disconnect, delivered another update during a running scripted Codex turn, completed the turn, and deduplicated an identical command.",
   );
 } catch (error) {
   console.error(String(error).replaceAll(token || "\0", "[redacted]"));

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { connection, type Config } from "./config.js";
+import type { Config } from "./config.js";
+import { connection } from "./setup.js";
 import { Store } from "./store.js";
 import { T3 } from "./t3.js";
 import { readGithub } from "./github.js";
@@ -37,7 +38,7 @@ export class Service {
       throw new Error(
         "Choose the destination threadId explicitly. Call list with threads=true to see T3 threads.",
       );
-    const { origin, tokenFile } = connection(this.config);
+    const { origin, tokenFile } = await connection(this.config);
     const key = JSON.stringify([origin, threadId, pr.toLowerCase()]);
     let watch = this.store.all().find((watch) => watch.key === key);
     if (watch && ["watching", "finishing"].includes(watch.status)) {
@@ -103,16 +104,13 @@ export class Service {
       error: error instanceof Error ? error.message : "Worker startup failed.",
     }));
     const watches = this.store.all().map(publicWatch);
-    const threads = includeThreads
-      ? (
-          await new T3(
-            connection(this.config).origin,
-            connection(this.config).tokenFile,
-          ).threads()
-        )
-          .filter((t) => !t.archivedAt && !t.deletedAt)
-          .map((t) => ({ id: t.id, title: t.title }))
-      : undefined;
+    let threads;
+    if (includeThreads) {
+      const { origin, tokenFile } = await connection(this.config);
+      threads = (await new T3(origin, tokenFile).threads())
+        .filter((t) => !t.archivedAt && !t.deletedAt)
+        .map((t) => ({ id: t.id, title: t.title }));
+    }
     return { watches, worker, ...(threads ? { threads } : {}) };
   }
   stop(id: string) {

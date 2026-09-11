@@ -10,9 +10,9 @@ Copy this into your coding agent:
 
 ```text
 Set up t3poll from https://github.com/eimexdev/t3poll.
-Use an existing checkout if available; otherwise clone into ~/code/t3poll.
+Use an existing checkout if available; otherwise choose an appropriate local installation folder.
 Read docs/agent-setup.md in that checkout and follow it.
-Find my local T3 connection settings where possible and configure MCP.
+Configure MCP to launch t3poll; it discovers local T3 and manages its credential.
 Preserve my running T3 server and ongoing conversations.
 Verify setup without sending a message to a thread or starting a watch.
 ```
@@ -21,15 +21,15 @@ The [agent setup guide](docs/agent-setup.md) covers discovery, credentials, conf
 
 ## Manual setup
 
-You need Linux, Node.js 24.10+, GitHub CLI signed in, and a compatible T3 server. Setup consists of building this checkout, supplying a T3 address and credential file, and adding one MCP configuration entry. Follow the [manual steps](docs/setup.md).
+You need Linux, Node.js 24.10+, GitHub CLI signed in, and a compatible T3 server. Build this checkout and add one MCP configuration entry. The first thread-listing or watch call finds local T3 and creates its credential. Follow the [manual steps](docs/setup.md).
 
-The address identifies your T3 instance; the credential lets t3poll read thread state and deliver notifications. These are one-time settings. Local addresses can often be discovered during setup, but automatic discovery is not built into t3poll yet. A destination thread is selected when registering each watch.
+No URL or token settings are needed for a standard local installation. If multiple instances are found, select one with `T3POLL_BASE_DIR`. Choose the destination thread when registering each watch.
 
 ## Daily use
 
 Ask your agent to watch a PR, list watches, or stop one. It can find destination IDs with `list { "threads": true }`.
 
-The CLI provides the same operations. From the checkout, with your connection variables set:
+The CLI provides the same operations. From the checkout, with T3 running:
 
 ```sh
 node dist/cli.js watch https://github.com/owner/repo/pull/123 --thread THREAD_ID
@@ -55,7 +55,7 @@ Reconnect the t3poll MCP server or use a new provider session to load the new co
 
 If you need to update sooner, record your watch destinations, stop those watches, wait for the worker to exit, then update and register them again. Re-registering starts a fresh baseline, so changes during the gap will not generate notifications. State lives outside the checkout in `~/.local/share/t3poll` by default.
 
-Credentials have their own expiration. The manual example issues a 30-day token; replacing its file renews access without restarting active watches.
+Automatically created credentials last 30 days. t3poll replaces them on use during their last day or after expiration, including from the background worker. Explicitly supplied token files remain your responsibility.
 
 ## Development
 

@@ -16,7 +16,7 @@ const scenarios = [
   {
     value: "existing",
     label: "Already configured",
-    hint: "change channel or repair setup",
+    hint: "review or repair setup",
   },
   {
     value: "missing",
@@ -51,7 +51,7 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 async function answer<T>(prompt: Promise<T | symbol>): Promise<T> {
   const value = await prompt;
   if (p.isCancel(value)) {
-    p.cancel("Prototype closed. Nothing was changed.");
+    p.cancel("Setup cancelled.");
     process.exit(0);
   }
   return value as T;
@@ -88,10 +88,6 @@ const instances = [
 ];
 
 p.intro("t3poll / setup");
-p.note(
-  "This is a flow prototype with sample data.\nNo files, credentials, or running applications are read or changed.\nUse ↑ ↓ and Enter. Ctrl+C exits at any point.",
-  "Try the setup",
-);
 let scenario: Scenario =
   (requested as Scenario) ??
   (await answer(
@@ -105,7 +101,8 @@ while (true) {
   let instance = "desktop";
   let directory = path(".t3");
   let provider = "default";
-  let channel = "latest";
+  // Sample invocation: npx t3poll@latest setup. The packaged CLI will use its build channel.
+  const channel = "latest";
   let codexHome = path(".codex");
   let stateHome = path(".local", "share", "t3poll");
   if (windows) stateHome = path("AppData", "Local", "t3poll");
@@ -126,10 +123,7 @@ while (true) {
             p.text({
               message: "T3 data directory",
               placeholder: path(".t3-work"),
-              validate: (v) =>
-                !v?.trim()
-                  ? "Enter a directory to use in this mock."
-                  : undefined,
+              validate: (v) => (!v?.trim() ? "Enter a directory." : undefined),
             }),
           )
         : instances.find((i) => i.value === instance)!.directory;
@@ -148,29 +142,6 @@ while (true) {
           },
         ],
       }),
-    );
-  }
-  async function chooseChannel() {
-    channel = await answer(
-      p.select({
-        message: "Which release channel?",
-        initialValue: channel,
-        options: [
-          {
-            value: "latest",
-            label: "Stable",
-            hint: "recommended · follows latest",
-          },
-          {
-            value: "nightly",
-            label: "Nightly",
-            hint: "early changes · may be less reliable",
-          },
-        ],
-      }),
-    );
-    p.log.info(
-      "The runtime follows your channel when it starts. Running watches are not hot-swapped.",
     );
   }
   async function advanced() {
@@ -198,27 +169,27 @@ while (true) {
     );
   }
 
-  await step("Checking sample prerequisites");
+  await step("Checking prerequisites");
   p.log.success("Node.js and GitHub CLI are available.");
   if (scenario === "missing") {
     p.note(
-      "GitHub CLI is not signed in. T3 is not running.\n\nIn a real setup:\n  1. Run gh auth login in another terminal.\n  2. Open T3 and enable its external API.\n\nThis prototype cannot perform or verify those steps.",
+      "GitHub CLI is not signed in. T3 is not running.\n\n  1. Run gh auth login in another terminal.\n  2. Open T3.\n\nThen check again to continue.",
       "Before continuing",
     );
     const action = await answer(
       p.select({
         message: "What would you like to do?",
         options: [
-          { value: "retry", label: "Simulate fixing these and check again" },
+          { value: "retry", label: "Check again" },
           { value: "exit", label: "Exit setup" },
         ],
       }),
     );
     if (action === "exit") {
-      p.outro("Prototype closed. Nothing was changed.");
+      p.outro("Setup cancelled.");
       break;
     }
-    await step("Rechecking sample prerequisites");
+    await step("Rechecking prerequisites");
   }
   p.log.success(
     "GitHub signed in as alex-example. T3 external API is available.",
@@ -239,7 +210,7 @@ while (true) {
           {
             value: "change",
             label: "Change setup",
-            hint: "review settings and choose a channel",
+            hint: "review settings",
           },
           {
             value: "repair",
@@ -251,11 +222,10 @@ while (true) {
       }),
     );
     if (action === "exit") {
-      p.outro("Prototype closed. Nothing was changed.");
+      p.outro("Setup cancelled.");
       break;
     }
-    if (action === "change") await chooseChannel();
-  } else await chooseChannel();
+  }
 
   if (scenario === "conflict") {
     p.note(
@@ -273,7 +243,7 @@ while (true) {
           },
           {
             value: "retry",
-            label: "Simulate removing the override",
+            label: "I removed the override — check again",
             hint: "then use T3’s saved settings",
           },
           { value: "exit", label: "Exit setup" },
@@ -281,13 +251,13 @@ while (true) {
       }),
     );
     if (action === "exit") {
-      p.outro("Prototype closed. Nothing was changed.");
+      p.outro("Setup cancelled.");
       break;
     }
     if (action === "instructions") {
       launchMode = "Manual launch environment update required";
       p.note(
-        "The finished wizard would show the merged launch arguments here,\nincluding your existing arguments and the t3poll enablement.\nYou would apply them to T3CODE_CODEX_LAUNCH_ARGS and restart T3.\n\nThis prototype has no real launch arguments to merge.",
+        "Add -c mcp_servers.t3poll.enabled=true to your existing\nT3CODE_CODEX_LAUNCH_ARGS, then restart T3.",
         "Manual step",
       );
     }
@@ -300,7 +270,7 @@ while (true) {
         `T3:          ${directory}`,
         `Codex:       ${provider} (${codexExecutable})`,
         `Scope:       Selected T3 instance only`,
-        `Channel:     ${channel === "latest" ? "Stable (latest)" : "Nightly"}`,
+        `Channel:     ${channel} (from invoked package)`,
         `Config:      ${codexHome}`,
         `State:       ${stateHome}`,
         `Launch:      ${launchMode}`,
@@ -310,12 +280,11 @@ while (true) {
     );
     const action = await answer(
       p.select({
-        message: "Ready to try it?",
+        message: "Ready to set up t3poll?",
         options: [
           {
             value: "apply",
-            label: "Simulate setup",
-            hint: "no changes will be made",
+            label: "Set up t3poll",
           },
           { value: "edit", label: "Edit choices" },
           { value: "preview", label: "View proposed changes" },
@@ -326,8 +295,6 @@ while (true) {
     if (action === "preview") {
       p.note(
         [
-          "Illustrative plan; runtime installation details are not implemented.",
-          "",
           `1. Back up the affected configuration in ${codexHome}.`,
           `2. Register the MCP runtime on the ${channel} channel, disabled by default.`,
           `3. Bind its connection and state to ${directory}.`,
@@ -347,7 +314,6 @@ while (true) {
           options: [
             { value: "instance", label: "T3 instance" },
             { value: "provider", label: "Codex configuration" },
-            { value: "channel", label: "Release channel" },
             {
               value: "advanced",
               label: "Advanced paths",
@@ -362,37 +328,36 @@ while (true) {
         provider = "default";
       }
       if (setting === "provider") await chooseProvider();
-      if (setting === "channel") await chooseChannel();
       if (setting === "advanced") await advanced();
     } else if (action === "exit") {
       p.log.info("Finished without applying. Nothing was changed.");
       finished = true;
     } else {
       for (const message of [
-        "Simulating configuration backup",
-        "Simulating MCP registration and instance binding",
-        "Simulating managed credential creation",
+        "Backing up configuration",
+        "Registering MCP for this instance",
+        "Creating managed credential",
       ])
         await step(message);
       if (launchMode.startsWith("Manual")) {
         p.log.warn(
-          "Simulation paused before verification: the launch environment still needs updating.\nThe real wizard would ask you to restart T3, then recheck the connection.",
+          "Update the launch environment and restart T3 before checking the connection.",
         );
         await answer(
           p.select({
-            message: "Continue the simulation?",
+            message: "Ready to check the connection?",
             options: [
               {
                 value: "continue",
-                label: "Simulate updating launch arguments and restarting T3",
+                label: "I updated the launch arguments and restarted T3",
               },
             ],
           }),
         );
-      } else await step("Simulating T3 launch argument update");
-      await step("Simulating MCP connection check");
+      } else await step("Updating T3 launch arguments");
+      await step("Checking MCP connection");
       p.note(
-        "Simulation complete. Nothing was installed or changed.\n\nAfter a real setup, open a fresh Codex session in the selected T3 instance.\nTry: “Watch this PR and let me know when it needs attention.”\nThe PR and destination thread are chosen when you start a watch.",
+        "Open a fresh Codex session in the selected T3 instance.\nTry: “Watch this PR and let me know when it needs attention.”\nThe PR and destination thread are chosen when you start a watch.",
         "Ready for a first watch",
       );
       finished = true;
@@ -402,7 +367,7 @@ while (true) {
     p.confirm({ message: "Try another scenario?", initialValue: false }),
   );
   if (!again) {
-    p.outro("Thanks for trying the setup flow. Nothing was changed.");
+    p.outro("Done.");
     break;
   }
   scenario = await answer(

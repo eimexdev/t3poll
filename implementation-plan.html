@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>t3poll · The simple plan</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f4ef;color:#20352f;font:17px/1.65 system-ui,sans-serif}main{max-width:780px;margin:auto;padding:54px 26px 70px}h1{font-size:56px;letter-spacing:-.05em;line-height:1.1;margin:12px 0 20px}h2{font-size:23px;line-height:1.25;margin:0 0 14px}p{margin:0 0 15px}section{background:#fffef9;border:1px solid #d9e1d8;border-radius:14px;padding:25px;margin:20px 0}.label{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:#287454}.lead{font-size:22px}.flow{padding:18px;background:#e4eee4;border-radius:9px;font-weight:650}li{margin:9px 0}ul,ol{padding-left:23px}a{color:#21694e;text-underline-offset:3px}code{font: .88em ui-monospace,monospace;background:#edf0e8;padding:2px 5px;border-radius:4px}small,footer{color:#586b60}details{font-size:14px;margin-top:25px}summary{cursor:pointer}footer{font-size:14px;margin-top:25px}@media print{body{background:white;font-size:11pt}main{padding:0}section{break-inside:avoid;padding:16px;border-radius:0}h1{font-size:36pt}details{display:none}}
+</style>
+</head>
+<body><main>
+<div class="label">Revised proposal · September 10, 2026</div>
+<h1>t3poll</h1>
+<p class="lead">An MCP server and CLI that watch a PR and wake your T3 conversation when something changes.</p>
+<p class="flow">Ask to watch → check GitHub → spot a change → message T3</p>
+<section><h2>What we build</h2>
+<ul>
+<li>MCP tools for <code>watch</code>, <code>list</code>, and <code>stop</code>, plus matching CLI commands: <code>t3poll watch</code>, <code>t3poll list</code>, and <code>t3poll stop</code>.</li>
+<li>A small skill that teaches the agent to register a PR against an explicit T3 thread.</li>
+<li>Calling watch through MCP or the CLI automatically starts a background worker if needed, then returns immediately. The worker exits when no active watches or pending deliveries remain.</li>
+<li>A small saved record of watches and delivered changes, with duplicate prevention and retries. Both interfaces use the same watcher.</li>
+</ul>
+<p>Configure the T3 connection once and explicitly bind each watch to a T3 thread. Thread binding must be reliable; we will not guess from the repository folder.</p>
+</section>
+<section><h2>When it runs</h2>
+<p>A background process is necessary to notice changes after the command returns. It runs only while there is work to watch, sleeps between polls, and needs no manual startup or system service installation.</p>
+<p>The worker can outlive the CLI command and the agent turn. T3 must still be available to receive a notification. After a machine restart, a new watch command restarts the worker and reloads saved watches; automatic startup at login is outside the first version.</p>
+</section>
+<section><h2>Polling first, webhooks optional</h2>
+<p>Check GitHub every <strong>60 seconds</strong> using the existing <code>gh</code> login. Notify on new review feedback, relevant CI results, and PR closure or merge. Combine related changes into one message and stay quiet when nothing changes.</p>
+<p>Webhooks are faster, but GitHub needs a reachable receiver, such as a public endpoint or relay. Creating a repository webhook also needs owner/admin access. That is extra setup for a local tool.</p>
+<p>Start with polling. Add optional webhooks later for repositories where they can be configured, with polling as the fallback and occasional catch-up check. Both routes would feed the same change handler.</p>
+</section>
+<section><h2>How the agent wakes up</h2>
+<p>Send a labeled message through T3's existing authenticated API. T3 owns the conversation history and starts the agent normally. Hold changes while the thread is busy and retry if T3 is unavailable.</p>
+<p>MCP Tasks support deferred results, but they require client support and do not by themselves guarantee a new turn in T3. Codex 0.153.2's event-stream entry point is restricted to hosted apps. Ordinary MCP tools avoid depending on that feature; wakeups still go through T3.</p>
+</section>
+<section><h2>Build order</h2>
+<ol>
+<li><strong>Prove the small loop.</strong> In an isolated T3 instance, run the watch command, let it return, finish the agent turn, and then deliver a simulated PR change.</li>
+<li><strong>Add real monitoring.</strong> Read GitHub, remember what changed, and send one notification per update.</li>
+<li><strong>Make it easy to install.</strong> Provide the MCP server, CLI, skill, and short setup instructions. Test worker startup and exit, stop, restart, duplicate delivery, and offline recovery.</li>
+</ol>
+<p>No dashboard, service manager, or general automation framework. Implementation waits for your approval, and the running T3 server stays untouched.</p>
+</section>
+<details><summary>Sources and remaining uncertainty</summary>
+<ul>
+<li><a href="https://modelcontextprotocol.io/extensions/tasks/overview">MCP Tasks</a>: asynchronous task handles, result retrieval, and explicit client support.</li>
+<li><a href="https://github.com/openai/codex/blob/rust-v0.153.2/codex-rs/app-server/src/request_processors/mcp_event_stream.rs">Codex 0.153.2 event streams</a>: hosted-app restriction. General Tasks-extension support for custom servers was not established by the documentation/source checks.</li>
+<li><a href="https://docs.github.com/en/webhooks/using-webhooks/creating-webhooks">GitHub webhook permissions</a> and <a href="https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/troubleshooting-webhooks">local receiver limitations</a>.</li>
+<li><a href="https://github.com/pingdotgg/t3code/blob/v0.0.40/packages/contracts/src/environmentHttp.ts#L532">T3 v0.0.40 dispatch contract</a>. Worker lifetime, thread binding, and delivery behavior still need the isolated proof.</li>
+</ul>
+</details>
+<footer>Plan only. No application code, credentials, or live configuration changed.</footer>
+</main></body></html>

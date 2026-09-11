@@ -150,7 +150,7 @@ process.stdout.write(JSON.stringify(result));
       store.save(due);
       await until(() => commands.length === 1);
       assert.equal(commands[0]!.threadId, "thread-1");
-      assert.match(commands[0]!.message.text, /issuecomment-1/);
+      assert.match(commands[0]!.message.text, /Check the PR for updates/);
       assert.doesNotMatch(commands[0]!.message.text, /Do not copy this/);
       await until(() => store.get(watch.id)!.lastDelivery !== null);
       busy = true;

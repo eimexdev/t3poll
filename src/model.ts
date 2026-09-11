@@ -148,19 +148,7 @@ export function mergeChanges(pending: Change[], incoming: Change[]): Change[] {
 }
 
 export function notification(watch: Watch): string {
-  const changes = watch.pending.slice(0, 20);
-  return [
-    `[t3poll] New activity on ${watch.pr}`,
-    `Watch: ${watch.id}. Head: ${watch.snapshot?.head ?? "unknown"}.`,
-    "",
-    ...changes.map((change) => `- ${change.text}\n  ${change.url}`),
-    ...(watch.pending.length > changes.length
-      ? [`- ${watch.pending.length - changes.length} more updates. See the PR.`]
-      : []),
-    "",
-    "Inspect the changes with your existing GitHub tools and continue the assigned task under this thread's existing permissions.",
-    "This notification does not authorize merging, pushing, or posting comments.",
-  ].join("\n");
+  return `[t3poll] New activity on ${watch.pr}\nCheck the PR for updates and continue the task.`;
 }
 
 export function backoff(failures: number, baseSeconds = 60): number {

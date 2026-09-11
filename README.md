@@ -37,7 +37,7 @@ node dist/cli.js list
 node dist/cli.js stop WATCH_ID
 ```
 
-Notifications contain a short description and links. The agent reads comments and logs with its existing GitHub tools. Busy threads accumulate updates until idle; t3poll checks again every 15 seconds and does not steer ongoing work. Watches expire after 24 hours or finish after notifying about closure/merge.
+Notifications contain a short description and links. The agent reads comments and logs with its existing GitHub tools. Running threads receive updates as steering through T3. Startup and approval/input prompts hold delivery, with a readiness check every 15 seconds. Watches expire after 24 hours or finish after notifying about closure/merge.
 
 See [monitoring behavior](docs/behavior.md) for notification examples, polling options, retries, and recovery after a reboot.
 

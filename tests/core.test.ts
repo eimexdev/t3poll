@@ -102,7 +102,10 @@ test("unchanged polls never dispatch; one changed snapshot dispatches once", asy
   f.now.value += 60000;
   await tick(f.store, f.watch.id, f.deps);
   assert.equal(f.sent.length, 1);
-  assert.match(f.sent[0]!.message.text, /Comment 1 added/);
+  assert.equal(
+    f.sent[0]!.message.text,
+    `[t3poll] New activity on ${pr}\nCheck the PR for updates and continue the task.`,
+  );
   assert.equal(f.sent[0]!.runtimeMode, "approval-required");
   assert.equal(f.store.get(f.watch.id)!.lastDelivery!.sequence, 42);
 });
@@ -124,7 +127,7 @@ test("busy thread coalesces feedback, then delivers when idle", async (t) => {
   f.now.value += 16000;
   await tick(f.store, f.watch.id, f.deps);
   assert.equal(f.sent.length, 1);
-  assert.match(f.sent[0]!.message.text, /Comment 2/);
+  assert.equal(f.store.get(f.watch.id)!.pending.length, 0);
 });
 
 test("timeout retry survives reopen and uses identical IDs and payload even with new feedback", async (t) => {
@@ -190,7 +193,7 @@ test("GitHub failures preserve baseline and back off; closure sends final update
   f.deps.github = async () => ({ ...baseline, state: "merged" });
   await tick(f.store, f.watch.id, f.deps);
   assert.equal(f.store.get(f.watch.id)!.status, "completed");
-  assert.match(f.sent[0]!.message.text, /merged/);
+  assert.equal(f.store.get(f.watch.id)!.snapshot!.state, "merged");
 });
 
 test("expired watches stop without a model wakeup", async (t) => {
@@ -314,7 +317,10 @@ test("a pending failed check is replaced by its recovery before a busy thread wa
   f.deps.thread = async () => ready;
   await tick(f.store, f.watch.id, f.deps);
   assert.equal(f.sent.length, 1);
-  assert.match(f.sent[0]!.message.text, /Tests: success/);
+  assert.equal(
+    f.store.get(f.watch.id)!.snapshot!.entries["check:tests"]!.fingerprint,
+    "success",
+  );
   assert.doesNotMatch(f.sent[0]!.message.text, /Tests: failure/);
 });
 
@@ -350,4 +356,28 @@ test("an accepted delivery is not repeated when the provider later fails", async
   await tick(f.store, f.watch.id, f.deps);
   assert.equal(f.sent.length, 1);
   assert.equal(f.store.get(f.watch.id)!.command, null);
+});
+
+test("running threads receive updates immediately, but approval and input prompts hold delivery", async (t) => {
+  const f = fixture(t);
+  f.deps.github = async () => changed();
+  const running: Thread = {
+    ...ready,
+    session: { status: "running", activeTurnId: "active-turn" },
+    latestTurn: { state: "running", completedAt: null },
+  };
+  for (const flag of ["hasPendingApprovals", "hasPendingUserInput"] as const) {
+    f.deps.thread = async () => ({ ...running, [flag]: true });
+    await tick(f.store, f.watch.id, f.deps);
+    assert.equal(f.sent.length, 0);
+    f.now.value += 16000;
+  }
+  f.deps.thread = async () => running;
+  await tick(f.store, f.watch.id, f.deps);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0]!.type, "thread.turn.start");
+  assert.equal(
+    f.sent[0]!.message.text,
+    `[t3poll] New activity on ${pr}\nCheck the PR for updates and continue the task.`,
+  );
 });

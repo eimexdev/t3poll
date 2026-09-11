@@ -100,7 +100,7 @@ export async function tick(
   try {
     // An ambiguous request still keeps its IDs, but do not revive an archived destination.
     // A busy thread may be busy because this very command was accepted, so only the
-    // first submission uses the idle gate below.
+    // first submission checks whether the thread can accept input below.
     if (watch.command) await deps.thread(watch);
     if (!watch.command) {
       const thread = await deps.thread(watch);
@@ -109,7 +109,7 @@ export async function tick(
       if (state !== "ready") {
         watch.deliveryError =
           state === "busy"
-            ? "Waiting for the T3 thread to become idle."
+            ? "Waiting for T3 startup or pending approval/input."
             : "T3 thread is blocked. Check its session, archive state, or pending work.";
         watch.nextDelivery = deps.now() + 15_000;
         store.save(watch);

@@ -39,25 +39,30 @@ export function availability(thread: Thread): "ready" | "busy" | "blocked" {
   if (
     thread.hasPendingApprovals ||
     thread.hasPendingUserInput ||
-    thread.session?.activeTurnId ||
-    ["starting", "running", "connecting"].includes(
-      thread.session?.status ?? "",
-    ) ||
+    ["starting", "connecting"].includes(thread.session?.status ?? "") ||
     (thread.latestTurn &&
-      ["pending", "running"].includes(thread.latestTurn.state))
+      ["pending", "running"].includes(thread.latestTurn.state) &&
+      thread.session?.status !== "running")
   )
     return "busy";
   // Unknown session/turn states must not be assumed idle on a new server release.
   if (
     thread.session &&
-    !["ready", "idle", "interrupted", "stopped", "disconnected"].includes(
-      thread.session.status,
-    )
+    ![
+      "ready",
+      "running",
+      "idle",
+      "interrupted",
+      "stopped",
+      "disconnected",
+    ].includes(thread.session.status)
   )
     return "blocked";
   if (
     thread.latestTurn &&
-    !["completed", "interrupted", "error"].includes(thread.latestTurn.state)
+    !["completed", "interrupted", "error", "pending", "running"].includes(
+      thread.latestTurn.state,
+    )
   )
     return "blocked";
   return "ready";

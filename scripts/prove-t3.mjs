@@ -48,7 +48,7 @@ writeFileSync(
 const fs=require('node:fs');const path=process.argv.at(-1);let result=[[]];
 if (/pulls\\/1$/.test(path)) result={state:'open',merged:false,head:{sha:'a'.repeat(40)}};
 else if(path.includes('/check-runs?')) result=[{check_runs:[]}];
-else if(path.includes('/issues/') && fs.readFileSync(${JSON.stringify(phase)},'utf8')==='1') result=[[{id:42,body:'New feedback',html_url:'https://github.com/owner/repo/pull/1#issuecomment-42'}]];
+else if(path.includes('/issues/') && fs.readFileSync(${JSON.stringify(phase)},'utf8')>='1') result=[[{id:42,body:'New feedback '+fs.readFileSync(${JSON.stringify(phase)},'utf8'),html_url:'https://github.com/owner/repo/pull/1#issuecomment-42'}]];
 process.stdout.write(JSON.stringify(result));
 `,
   { mode: 0o700 },
@@ -61,6 +61,7 @@ const env = {
   XDG_DATA_HOME: join(home, ".local/share"),
   T3CODE_HOME: base,
   T3POLL_TEST_PROVIDER_LOG: providerLog,
+  T3POLL_TEST_TURN_DELAY_MS: "5000",
   LANG: "C.UTF-8",
 };
 await exec("git", ["init", work], { env });
@@ -222,10 +223,32 @@ try {
       readFileSync(providerLog, "utf8").includes("[t3poll]")
     );
   });
+  // Deliver a second update while the scripted provider's first turn remains active.
+  await until(
+    async () => (await inspectThread()).session?.status === "running",
+  );
+  writeFileSync(phase, "2");
+  const activeWatch = store.get(id);
+  activeWatch.nextPoll = 0;
+  activeWatch.nextDelivery = 0;
+  assert.ok(store.save(activeWatch));
+  await until(
+    () =>
+      existsSync(providerLog) &&
+      readFileSync(providerLog, "utf8").trim().split("\n").length >= 2,
+  );
+  await until(
+    async () => (await inspectThread()).session?.status === "running",
+  );
   await until(
     async () =>
       (await request(`/api/orchestration/threads/${threadId}`)).thread
         .latestTurn?.state === "completed",
+  );
+  assert.equal(
+    JSON.parse(readFileSync(providerLog, "utf8").trim().split("\n")[1])
+      .testWasRunning,
+    true,
   );
   // Exact same dispatch must not append another message or invoke another provider turn.
   const body = {
@@ -254,7 +277,7 @@ try {
   store.stop(id);
   await until(() => !store.worker());
   console.log(
-    "PASS: stock T3 accepted MCP-started background delivery after MCP disconnect, invoked the scripted Codex provider, completed the turn, and deduplicated an identical command.",
+    "PASS: stock T3 accepted MCP-started background delivery after MCP disconnect, delivered another update during a running scripted Codex turn, completed the turn, and deduplicated an identical command.",
   );
 } catch (error) {
   console.error(String(error).replaceAll(token || "\0", "[redacted]"));

@@ -23,6 +23,7 @@ let thread = {
   turns: [],
 };
 thread.sessionId = thread.id;
+let activeTurns = 0;
 const model = {
   id: "gpt-5.3-codex",
   model: "gpt-5.3-codex",
@@ -113,31 +114,36 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       if (process.env.T3POLL_TEST_PROVIDER_LOG)
         appendFileSync(
           process.env.T3POLL_TEST_PROVIDER_LOG,
-          `${JSON.stringify(request.params)}\n`,
+          `${JSON.stringify({ ...request.params, testWasRunning: activeTurns > 0 })}\n`,
         );
+      activeTurns++;
       send({ id: request.id, result: { turn } });
       send({ method: "turn/started", params: { threadId: thread.id, turn } });
-      setTimeout(() => {
-        const item = {
-          type: "agentMessage",
-          id: randomUUID(),
-          text: "Simulated provider received the update.",
-        };
-        send({
-          method: "item/started",
-          params: { threadId: thread.id, turnId: turn.id, item },
-        });
-        send({
-          method: "item/completed",
-          params: { threadId: thread.id, turnId: turn.id, item },
-        });
-        const completed = { ...turn, status: "completed", items: [item] };
-        thread.turns.push(completed);
-        send({
-          method: "turn/completed",
-          params: { threadId: thread.id, turn: completed },
-        });
-      }, 50);
+      setTimeout(
+        () => {
+          const item = {
+            type: "agentMessage",
+            id: randomUUID(),
+            text: "Simulated provider received the update.",
+          };
+          send({
+            method: "item/started",
+            params: { threadId: thread.id, turnId: turn.id, item },
+          });
+          send({
+            method: "item/completed",
+            params: { threadId: thread.id, turnId: turn.id, item },
+          });
+          activeTurns--;
+          const completed = { ...turn, status: "completed", items: [item] };
+          thread.turns.push(completed);
+          send({
+            method: "turn/completed",
+            params: { threadId: thread.id, turn: completed },
+          });
+        },
+        Number(process.env.T3POLL_TEST_TURN_DELAY_MS ?? 50),
+      );
       return;
     }
   }

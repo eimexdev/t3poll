@@ -4,15 +4,7 @@
 
 ```text
 [t3poll] New activity on https://github.com/owner/repo/pull/123
-Watch: <ID>. Head: <commit>.
-
-- Comment 456 was added or updated.
-  https://github.com/owner/repo/pull/123#issuecomment-456
-- Check "tests": failure.
-  https://github.com/owner/repo/actions/runs/789
-
-Inspect the changes with your existing GitHub tools and continue
-the assigned task under this thread's existing permissions.
+Check the PR for updates and continue the task.
 ```
 
 Comment bodies and CI logs are not copied into the message. The agent fetches what it needs. t3poll does not merge, push, approve, or post comments.
@@ -25,7 +17,7 @@ An optional CLI `--interval 30`, or MCP `intervalSeconds: 30`, changes the poll 
 
 - The first read establishes a baseline. Existing feedback does not cause a notification.
 - New or edited comments/reviews, terminal CI results, head commits, and closure/merge are detected. Check reruns and legacy commit statuses are included; queued/running checks stay quiet.
-- Changes found in one poll become one notification. Changes accumulate while the destination is busy or awaiting input/approval.
+- Changes found in one poll become one notification. Changes accumulate while the destination is starting or awaiting input/approval.
 - Watches finish after the final closure/merge notification, stop on request, or expire after 24 hours. Expiration cancels remaining unsent work.
 - T3/GitHub failures retry with backoff. `list` shows polling and delivery errors. A timed-out dispatch retains the same command and message IDs for retry.
 - `lastDelivery` means T3 accepted the command. It does **not** mean the agent completed the work. Provider failures remain in T3; t3poll does not blindly send the message again.
@@ -38,6 +30,8 @@ See [compatibility and limitations](compatibility.md) and [why polling comes bef
 
 ## Busy threads
 
-GitHub polling continues every 60 seconds by default. When there is a notification to deliver, a busy thread or one awaiting approval/input is checked again every 15 seconds. Changes accumulate and are combined into a normal message when the thread becomes idle. t3poll sends no steering or interrupt command. A watch still expires after 24 hours, including any unsent notifications.
+GitHub polling continues every 60 seconds by default. Running threads receive the same short notification immediately through T3's normal message command. With Codex 0.153.2, this steers the active turn. Idle threads start a new turn.
 
-The idle check and message submission are separate requests. A user can start a turn between them; see the [compatibility limits](compatibility.md#boundaries).
+Threads starting up or awaiting approval/input are checked again every 15 seconds. Changes accumulate until they can accept input. Watches still expire after 24 hours, including unsent notifications. Unknown or errored session states block delivery.
+
+Delivery uses the provider's normal input handling; see [compatibility limits](compatibility.md#boundaries).

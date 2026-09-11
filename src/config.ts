@@ -1,3 +1,4 @@
+import { assertPrivateFile } from "./private-files.js";
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
@@ -46,14 +47,13 @@ export function readToken(path: string): string {
   try {
     const stat = statSync(path);
     if (!stat.isFile() || stat.size > 16_384) throw new Error("Invalid file");
-    if (process.platform !== "win32" && (stat.mode & 0o077) !== 0)
-      throw new Error("File permissions must be 600");
+    assertPrivateFile(path);
     const token = readFileSync(path, "utf8").trim();
     if (!token || /\s/.test(token)) throw new Error("Invalid token");
     return token;
   } catch {
     throw new Error(
-      "Cannot read T3 credential. T3POLL_TOKEN_FILE must contain a bearer token in an owner-only file (chmod 600).",
+      "Cannot read T3 credential. T3POLL_TOKEN_FILE must contain a bearer token in a private file (chmod 600 on Unix; current-user-only ACL on Windows).",
     );
   }
 }

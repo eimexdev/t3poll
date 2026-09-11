@@ -1,6 +1,7 @@
+import { makePublic } from "./fixtures/permissions.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -279,7 +280,7 @@ test("config rejects unsafe origins and credential permissions", (t) => {
   const token = join(f.home, "token");
   writeFileSync(token, "test-secret", { mode: 0o600 });
   assert.equal(readToken(token), "test-secret");
-  chmodSync(token, 0o644);
+  makePublic(token);
   assert.throws(() => readToken(token));
   assert.throws(() => parsePr("https://evil.com/a/b/pull/1"));
   assert.throws(() => parsePr("file:///a/b/pull/1"));

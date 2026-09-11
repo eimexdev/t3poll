@@ -1,6 +1,6 @@
 # npm distribution and MCP launch
 
-Status: deferred until real-world testing is satisfactory. Nothing has been published by this plan.
+Status: planned after setup and platform verification. Follow the [setup and release work order](setup-and-release.md), including native Windows support and testing. Nothing has been published by this plan.
 
 ## Intended experience
 
@@ -12,7 +12,9 @@ npx --yes --prefer-online t3poll@latest mcp
 
 This is a proposed invocation. Confirm the available npm package name and publishing account first; use a scope if needed. Follow [T3-only registration](t3-only-mcp.md) when configuring Codex.
 
-`@latest` with an online check picks up releases when MCP launches. It does not update an already-running MCP process or detached worker. An explicit version can provide a fixed installation. See [worker updates](worker-updates.md) for active monitoring.
+`@latest` with an online check picks up stable releases when MCP launches. Offer `@nightly` as an explicit opt-in and preserve the selected channel. Ordinary installations should follow their channel rather than pinning the version used for setup. An explicit version can remain a troubleshooting option.
+
+Publish nightly builds automatically after checks. Trigger stable publication manually from a commit already shipped on nightly, following T3 Code's manual promotion approach. A channel change does not update an already-running MCP process or detached worker. Include [worker updates](worker-updates.md) in the release work so active monitoring survives version handoff.
 
 ## Work
 

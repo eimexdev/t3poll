@@ -1,4 +1,4 @@
-import { mkdirSync, chmodSync } from "node:fs";
+import { privateDirectory, protectFile } from "./private-files.js";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Watch } from "./model.js";
@@ -6,10 +6,10 @@ import type { Watch } from "./model.js";
 export class Store {
   readonly db: DatabaseSync;
   constructor(readonly home: string) {
-    mkdirSync(home, { recursive: true, mode: 0o700 });
+    privateDirectory(home);
     const path = join(home, "state.sqlite");
     this.db = new DatabaseSync(path);
-    chmodSync(path, 0o600);
+    protectFile(path);
     this.db.exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;");
     const version = this.db.prepare("PRAGMA user_version").get()?.user_version;
     if (version !== 0 && version !== 1)

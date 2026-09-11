@@ -220,6 +220,7 @@ export async function ensureWorker(
     [fileURLToPath(new URL("./cli.js", import.meta.url)), "_worker"],
     {
       detached: true,
+      windowsHide: true,
       stdio: ["ignore", log, log],
       cwd: store.home,
       env: { ...process.env, T3POLL_HOME: store.home },

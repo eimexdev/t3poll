@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, readlinkSync, statSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
+import { windows } from "./windows.js";
 
-type LocalProcess = {
+export type LocalProcess = {
   args: string[];
   env: Record<string, string>;
   cwd: string;
@@ -63,6 +64,8 @@ function lsof(pid: number, descriptors?: string): string[] {
 }
 
 export function hasOpenFile(pid: number, path: string): boolean {
+  if (process.platform === "win32")
+    return windows().hasOpenFile(pid, realpathSync(path));
   const expected = realpathSync(path);
   return lsof(pid).some((file) => {
     try {
@@ -107,6 +110,7 @@ function readDarwin(pid: number) {
 }
 
 export function readLocalProcess(pid: number): LocalProcess {
+  if (process.platform === "win32") return windows().inspect(pid);
   if (process.platform === "linux") {
     const proc = `/proc/${pid}`;
     if (statSync(proc).uid !== process.getuid?.())

@@ -55,6 +55,7 @@ export const ghApi: GhApi = async (path, paginate = false) => {
       ],
       {
         timeout: 30_000,
+        windowsHide: true,
         maxBuffer: 16 * 1024 * 1024,
         env: { ...process.env, GH_PROMPT_DISABLED: "1" },
       },

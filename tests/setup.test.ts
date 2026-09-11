@@ -10,6 +10,7 @@ import {
   statSync,
   existsSync,
   symlinkSync,
+  realpathSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -29,7 +30,7 @@ async function fixture(
   t: { after: (fn: () => Promise<void>) => void },
   launch: "direct" | "absolute-link" | "relative-link" = "direct",
 ) {
-  const root = mkdtempSync(join(tmpdir(), "t3poll-setup-"));
+  const root = mkdtempSync(join(tmpdir(), "t3poll setup space-"));
   const base = join(root, "t3");
   const home = join(root, "poll");
   const pkg = join(root, "package");
@@ -178,7 +179,7 @@ test("discovery reports ambiguity and accepts a URL selector", async (t) => {
     assert.throws(() => discover({ home: first.home }), /Multiple local T3/);
     assert.equal(
       discover({ home: first.home, origin: second.origin }).baseDir,
-      second.base,
+      realpathSync(second.base),
     );
   } finally {
     process.chdir(cwd);

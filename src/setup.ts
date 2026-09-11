@@ -1,13 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   readFileSync,
-  readlinkSync,
   realpathSync,
-  statSync,
   mkdirSync,
   chmodSync,
   writeFileSync,
@@ -19,6 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { readToken, validateOrigin, type Config } from "./config.js";
+import { readLocalProcess, hasOpenFile } from "./local-process.js";
 
 const exec = promisify(execFile);
 const runtimeSchema = z.object({
@@ -40,6 +39,7 @@ export type LocalT3 = {
   origin: string;
   node: string;
   cli: string;
+  electron?: boolean;
 };
 const renewalWindow = 24 * 60 * 60 * 1000;
 function canReuse(metadata: Managed): boolean {
@@ -71,26 +71,43 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
         readFileSync(join(baseDir, "userdata/server-runtime.json"), "utf8"),
       ),
     );
-    const proc = `/proc/${state.pid}`;
-    if (statSync(proc).uid !== process.getuid?.()) return;
-    const args = readFileSync(join(proc, "cmdline"), "utf8").split("\0");
-    const env = Object.fromEntries(
-      readFileSync(join(proc, "environ"), "utf8")
-        .split("\0")
-        .filter(Boolean)
-        .map((pair) => {
-          const i = pair.indexOf("=");
-          return [pair.slice(0, i), pair.slice(i + 1)];
-        }),
-    );
-    const cwd = readlinkSync(join(proc, "cwd"));
+    const { args, env, cwd, executable } = readLocalProcess(state.pid);
     if (!args[1] || args.includes("auth")) return;
-    const cli = realpathSync(resolve(cwd, args[1]));
-    if (!cli.endsWith("/dist/bin.mjs")) return;
-    const pkg = JSON.parse(
-      readFileSync(join(dirname(cli), "../package.json"), "utf8"),
-    );
-    if (pkg.name !== "t3") return;
+    let cli: string;
+    const electron =
+      process.platform === "darwin" &&
+      executable.includes(".app/Contents/MacOS/");
+    if (electron) {
+      const contents = dirname(dirname(executable));
+      const archive = join(contents, "Resources/app.asar");
+      cli = join(archive, "apps/server/dist/bin.mjs");
+      if (args[1] !== cli || env.ELECTRON_RUN_AS_NODE !== "1") return;
+      const name = execFileSync(
+        executable,
+        [
+          "-e",
+          "process.stdout.write(require(process.argv[1]).name)",
+          join(archive, "package.json"),
+        ],
+        {
+          encoding: "utf8",
+          timeout: 5000,
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+        },
+      );
+      if (name !== "t3code") return;
+      // Desktop bootstrap passes its home through a private pipe, not argv/env.
+      // Verify the selected database is actually open in this server process.
+      if (!hasOpenFile(state.pid, join(baseDir, "userdata/state.sqlite")))
+        return;
+    } else {
+      cli = realpathSync(resolve(cwd, args[1]));
+      if (!cli.endsWith("/dist/bin.mjs")) return;
+      const pkg = JSON.parse(
+        readFileSync(join(dirname(cli), "../package.json"), "utf8"),
+      );
+      if (pkg.name !== "t3") return;
+    }
     const flagIndex = args.indexOf("--base-dir");
     const baseFlag = args
       .find((arg) => arg.startsWith("--base-dir="))
@@ -100,7 +117,10 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
       (flagIndex >= 0 ? args[flagIndex + 1] : undefined) ??
       env.T3CODE_HOME ??
       join(env.HOME ?? homedir(), ".t3");
-    if (realpathSync(resolve(cwd, processHome)) !== realpathSync(baseDir))
+    if (
+      !electron &&
+      realpathSync(resolve(cwd, processHome)) !== realpathSync(baseDir)
+    )
       return;
     // Automatic issuance currently targets the released userdata layout only.
     const origin = validateOrigin(state.origin);
@@ -109,8 +129,9 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
     return {
       baseDir: realpathSync(baseDir),
       origin,
-      node: readlinkSync(join(proc, "exe")),
-      cli: realpathSync(cli),
+      node: executable,
+      cli,
+      ...(electron ? { electron: true } : {}),
     };
   } catch {
     return;
@@ -198,6 +219,8 @@ async function issue(
   // Pin userdata and clear development settings inherited from an unrelated shell.
   const env = { ...process.env };
   delete env.VITE_DEV_SERVER_URL;
+  delete env.ELECTRON_RUN_AS_NODE;
+  if (server.electron) env.ELECTRON_RUN_AS_NODE = "1";
   env.T3CODE_HOME = server.baseDir;
   const cleanup = async () => {
     if (!sessionId) return;

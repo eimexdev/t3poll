@@ -4,7 +4,7 @@ t3poll targets the authenticated orchestration API in stock T3 Code v0.0.40. It 
 
 Verified September 11, 2026 on Node 24.21.0 and Linux: the stock-release proof passed with T3 0.0.40 and a scripted Codex provider. MCP disconnected before delivery; T3 recorded the notification, invoked the provider, completed the turn, and deduplicated a repeated command. A separate read-only GitHub smoke check parsed reviews, comments, and checks from a public upstream PR. No live T3 server or real model session was used.
 
-The initial platform is Linux with Node.js 24.10+. The implementation uses Node's built-in SQLite, the MCP SDK, and Zod. It does not require Effect or a database server. MCP uses ordinary stdio tools; Tasks and unsolicited MCP wakeups are not dependencies.
+Supported platforms are macOS and Linux with Node.js 24.10+. The implementation uses Node's built-in SQLite, the MCP SDK, and Zod. It does not require Effect or a database server. MCP uses ordinary stdio tools; Tasks and unsolicited MCP wakeups are not dependencies.
 
 ## Boundaries
 
@@ -48,4 +48,14 @@ This proves the protocol and process flow without spending model tokens. It does
 
 Tested against an isolated copy of T3 `0.0.41-nightly.20260910.1507` on Linux. The proof starts MCP without URL/token configuration, discovers the instance, creates and verifies its credential, and forces credential renewal from the detached worker before a second delivery. A fresh CLI process then reuses the connection. No running user server or real model is used.
 
-Unit/process tests additionally cover simultaneous first use across processes, expired credential replacement, failed issuance/verification preserving the token, stale process state, ambiguous instances, and manual credential overrides. Discovery requires Linux `/proc` and an installed T3 `dist/bin.mjs` process with `userdata` runtime state. Other layouts retain the manual connection path.
+Unit/process tests additionally cover simultaneous first use across processes, expired credential replacement, failed issuance/verification preserving the token, stale process state, ambiguous instances, and manual credential overrides. Discovery supports Linux `/proc` and macOS native process inspection for installed T3 `dist/bin.mjs` processes with `userdata` runtime state. Packaged macOS desktop apps use their bundled Electron runtime for credential issuance and renewal. Other layouts retain the manual connection path.
+
+## macOS verification
+
+Verified September 11, 2026 on Apple Silicon with Node 24.21.0 and T3 Code Nightly `0.0.41-nightly.20260910.1507`. All 30 automated tests pass, including process discovery, paths containing spaces, symlinks, credential renewal, and worker survival after MCP exit. CI runs the suite on both Ubuntu and macOS. Intel Macs have not been tested locally.
+
+A read-only check of a running desktop installation discovered its server without connection overrides, issued a managed credential, and listed 142 threads through both the service and a real stdio MCP client. The MCP client exposed `watch`, `list`, and `stop`. The live installation had no watches, and no messages or watches were created there.
+
+The isolated stock proof passed against the same packaged app. It verified initial credential issuance, renewal from the detached worker, delivery after MCP disconnected, another delivery during a running scripted provider turn, turn completion, and command deduplication. No model calls were made. The proof pins the scripted provider's executable and environment because desktop startup can replace the inherited PATH.
+
+The stock proof also accepts a packaged macOS app. Use the app's executable as `T3POLL_TEST_T3_RUNTIME` and its `Contents/Resources/app.asar/apps/server/dist/bin.mjs` as `T3POLL_TEST_T3_BIN`. The proof selects only its disposable T3 home, so another running installation cannot be selected by accident.

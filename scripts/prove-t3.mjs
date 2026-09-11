@@ -37,8 +37,15 @@ const work = join(root, "repo");
 const bin = join(root, "bin");
 for (const dir of [base, home, work, bin]) mkdirSync(dir, { mode: 0o700 });
 const node = process.execPath;
+const runtime = process.env.T3POLL_TEST_T3_RUNTIME ?? node;
 const providerLog = join(root, "provider.jsonl");
-copyFileSync(resolve("tests/fixtures/codex.mjs"), join(bin, "codex"));
+copyFileSync(resolve("tests/fixtures/codex.mjs"), join(bin, "codex.mjs"));
+const quote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+const providerErrors = join(root, "provider-errors.log");
+writeFileSync(
+  join(bin, "codex"),
+  `#!/bin/sh\nexec ${quote(node)} ${quote(join(bin, "codex.mjs"))} "$@" 2>>${quote(providerErrors)}\n`,
+);
 chmodSync(join(bin, "codex"), 0o700);
 const phase = join(root, "phase");
 writeFileSync(phase, "0");
@@ -64,6 +71,29 @@ const env = {
   T3POLL_TEST_TURN_DELAY_MS: "5000",
   LANG: "C.UTF-8",
 };
+mkdirSync(join(base, "userdata"), { recursive: true });
+writeFileSync(
+  join(base, "userdata/settings.json"),
+  JSON.stringify({
+    providers: {
+      codex: { binaryPath: join(bin, "codex"), homePath: env.CODEX_HOME },
+    },
+    providerInstances: {
+      codex: {
+        driver: "codex",
+        config: { binaryPath: join(bin, "codex"), homePath: env.CODEX_HOME },
+        environment: Object.entries(env).map(([name, value]) => ({
+          name,
+          value,
+        })),
+      },
+    },
+  }),
+);
+const serverEnv = {
+  ...env,
+  ...(runtime !== node ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+};
 await exec("git", ["init", work], { env });
 const reservation = createServer();
 await new Promise((r) => reservation.listen(0, "127.0.0.1", r));
@@ -87,7 +117,7 @@ async function until(check, timeout = 30000) {
 }
 try {
   const issued = await exec(
-    node,
+    runtime,
     [
       binary,
       "auth",
@@ -99,13 +129,13 @@ try {
       "1h",
       "--token-only",
     ],
-    { env, cwd: work, timeout: 30000 },
+    { env: serverEnv, cwd: work, timeout: 30000 },
   );
   token = issued.stdout.trim();
   const tokenFile = join(root, "token");
   writeFileSync(tokenFile, token, { mode: 0o600 });
   server = spawn(
-    node,
+    runtime,
     [
       binary,
       "--base-dir",
@@ -118,7 +148,7 @@ try {
       "--auto-bootstrap-project-from-cwd",
       work,
     ],
-    { env, cwd: work, stdio: ["ignore", log, log] },
+    { env: serverEnv, cwd: work, stdio: ["ignore", log, log] },
   );
   closeSync(log);
   const request = async (path, body) => {
@@ -188,7 +218,9 @@ try {
       env: {
         ...env,
         T3POLL_HOME: pollHome,
+        T3POLL_BASE_DIR: base,
       },
+      cwd: work,
       stderr: "pipe",
     }),
   );
@@ -265,7 +297,11 @@ try {
   const checked = await exec(
     node,
     [resolve("dist/cli.js"), "list", "--threads"],
-    { env: { ...env, T3POLL_HOME: pollHome }, timeout: 30000 },
+    {
+      env: { ...env, T3POLL_HOME: pollHome, T3POLL_BASE_DIR: base },
+      cwd: work,
+      timeout: 30000,
+    },
   );
   assert.ok(JSON.parse(checked.stdout).threads.some((t) => t.id === threadId));
   // Exact same dispatch must not append another message or invoke another provider turn.
@@ -310,6 +346,8 @@ try {
         .replaceAll(token || "\0", "[redacted]")
         .replace(/token=[^\s]+/g, "token=[redacted]"),
     );
+  if (existsSync(providerErrors))
+    console.error(readFileSync(providerErrors, "utf8").slice(-4000));
   process.exitCode = 1;
 } finally {
   await client?.close();

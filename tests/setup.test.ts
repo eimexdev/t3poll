@@ -9,6 +9,7 @@ import {
   rmSync,
   statSync,
   existsSync,
+  symlinkSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -24,7 +25,10 @@ import {
 import { T3 } from "../src/t3.js";
 import { Service } from "../src/service.js";
 const exec = promisify(execFile);
-async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
+async function fixture(
+  t: { after: (fn: () => Promise<void>) => void },
+  launch: "direct" | "absolute-link" | "relative-link" = "direct",
+) {
   const root = mkdtempSync(join(tmpdir(), "t3poll-setup-"));
   const base = join(root, "t3");
   const home = join(root, "poll");
@@ -37,7 +41,12 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
   );
   const cli = join(pkg, "dist/bin.mjs");
   copyFileSync(resolve("tests/fixtures/local-t3.mjs"), cli);
-  const child = spawn(process.execPath, [cli, "serve"], {
+  const link = join(root, "t3-bin");
+  symlinkSync(cli, link);
+  const command =
+    launch === "direct" ? cli : launch === "absolute-link" ? link : "./t3-bin";
+  const child = spawn(process.execPath, [command, "serve"], {
+    cwd: root,
     env: { ...process.env, T3CODE_HOME: base },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -212,4 +221,37 @@ test("a runtime file pointing at another T3 data directory cannot mint credentia
   await assert.rejects(connection(second.config), /No supported local/);
   assert.equal(first.issued(), 0);
   assert.equal(second.issued(), 0);
+});
+
+for (const launch of ["absolute-link", "relative-link"] as const) {
+  test(`discovery and issuance work through a ${launch}`, async (t) => {
+    const f = await fixture(t, launch);
+    const c = await connection(f.config);
+    assert.equal(c.origin, f.origin);
+    assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+    assert.equal(f.issued(), 1);
+  });
+}
+
+test("proactive renewal failure keeps serving a valid token, backs off, and never bypasses expiration", async (t) => {
+  const f = await fixture(t);
+  const c = await connection(f.config);
+  const path = `${c.tokenFile}.managed.json`;
+  const metadata = JSON.parse(readFileSync(path, "utf8"));
+  metadata.expiresAt = new Date(Date.now() + 3600000).toISOString();
+  writeFileSync(path, JSON.stringify(metadata));
+  const token = readFileSync(c.tokenFile, "utf8");
+  writeFileSync(join(f.base, "fail"), "");
+  assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+  const failed = JSON.parse(readFileSync(path, "utf8"));
+  assert.ok(failed.retryAfter > Date.now());
+  assert.equal(readFileSync(c.tokenFile, "utf8"), token);
+  assert.deepEqual(await connection(f.config), c);
+  assert.equal(readFileSync(path, "utf8"), JSON.stringify(failed) + "\n");
+  failed.expiresAt = new Date(0).toISOString();
+  writeFileSync(path, JSON.stringify(failed));
+  await assert.rejects(new T3(c.origin, c.tokenFile).threads(), /preserved/);
+  rmSync(join(f.base, "fail"));
+  assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+  assert.notEqual(readFileSync(c.tokenFile, "utf8"), token);
 });

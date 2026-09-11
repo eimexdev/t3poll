@@ -32,6 +32,7 @@ const managedSchema = z.object({
   origin: z.string(),
   expiresAt: z.string().datetime(),
   sessionId: z.string(),
+  retryAfter: z.number().optional(),
 });
 type Managed = z.infer<typeof managedSchema>;
 export type LocalT3 = {
@@ -41,6 +42,14 @@ export type LocalT3 = {
   cli: string;
 };
 const renewalWindow = 24 * 60 * 60 * 1000;
+function canReuse(metadata: Managed): boolean {
+  const now = Date.now();
+  return (
+    Date.parse(metadata.expiresAt) > now &&
+    (Date.parse(metadata.expiresAt) > now + renewalWindow ||
+      (metadata.retryAfter ?? 0) > now)
+  );
+}
 
 function candidateHomes(config: Config): string[] {
   if (config.baseDir) return [config.baseDir];
@@ -75,8 +84,9 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
         }),
     );
     const cwd = readlinkSync(join(proc, "cwd"));
-    const cli = args[1];
-    if (!cli || !cli.endsWith("/dist/bin.mjs") || args.includes("auth")) return;
+    if (!args[1] || args.includes("auth")) return;
+    const cli = realpathSync(resolve(cwd, args[1]));
+    if (!cli.endsWith("/dist/bin.mjs")) return;
     const pkg = JSON.parse(
       readFileSync(join(dirname(cli), "../package.json"), "utf8"),
     );
@@ -244,10 +254,7 @@ async function ensureCredential(
       );
     if (metadata && metadata.origin !== origin)
       throw new Error("Managed T3 credential belongs to a different server.");
-    if (
-      metadata &&
-      Date.parse(metadata.expiresAt) > Date.now() + renewalWindow
-    ) {
+    if (metadata && canReuse(metadata)) {
       try {
         readToken(tokenFile);
         return;
@@ -255,15 +262,26 @@ async function ensureCredential(
         /* Replace missing or unreadable managed credentials. */
       }
     }
-    const server =
-      initial ?? (metadata ? inspectLocal(metadata.baseDir) : undefined);
-    if (!server || server.origin !== origin)
-      throw new Error(
-        "Cannot renew credential: the selected local T3 server is unavailable or its address changed.",
+    try {
+      const server =
+        initial ?? (metadata ? inspectLocal(metadata.baseDir) : undefined);
+      if (!server || server.origin !== origin)
+        throw new Error(
+          "Cannot renew credential: the selected local T3 server is unavailable or its address changed.",
+        );
+      const issued = await issue(server);
+      atomic(tokenFile, `${issued.token}\n`);
+      atomic(metaPath, `${JSON.stringify(issued.metadata)}\n`);
+    } catch (error) {
+      if (!metadata || Date.parse(metadata.expiresAt) <= Date.now())
+        throw error;
+      // Proactive renewal must not interrupt delivery through a still-valid token.
+      readToken(tokenFile);
+      atomic(
+        metaPath,
+        `${JSON.stringify({ ...metadata, retryAfter: Date.now() + 5 * 60_000 })}\n`,
       );
-    const issued = await issue(server);
-    atomic(tokenFile, `${issued.token}\n`);
-    atomic(metaPath, `${JSON.stringify(issued.metadata)}\n`);
+    }
   });
 }
 
@@ -278,11 +296,7 @@ export async function renewManaged(
   );
   if (metadata.origin !== origin)
     throw new Error("Managed T3 credential belongs to a different server.");
-  if (
-    Date.parse(metadata.expiresAt) > Date.now() + renewalWindow &&
-    existsSync(tokenFile)
-  )
-    return;
+  if (canReuse(metadata) && existsSync(tokenFile)) return;
   await ensureCredential(tokenFile, origin);
 }
 

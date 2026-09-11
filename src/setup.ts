@@ -296,7 +296,14 @@ export async function renewManaged(
   );
   if (metadata.origin !== origin)
     throw new Error("Managed T3 credential belongs to a different server.");
-  if (canReuse(metadata) && existsSync(tokenFile)) return;
+  if (canReuse(metadata)) {
+    try {
+      readToken(tokenFile);
+      return;
+    } catch {
+      /* Repair invalid managed files below. */
+    }
+  }
   await ensureCredential(tokenFile, origin);
 }
 

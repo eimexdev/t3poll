@@ -255,3 +255,16 @@ test("proactive renewal failure keeps serving a valid token, backs off, and neve
   assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
   assert.notEqual(readFileSync(c.tokenFile, "utf8"), token);
 });
+
+test("worker requests repair empty and insecure managed token files before expiry", async (t) => {
+  const f = await fixture(t);
+  const c = await connection(f.config);
+  writeFileSync(c.tokenFile, "");
+  assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+  assert.equal(f.issued(), 2);
+  const { chmodSync } = await import("node:fs");
+  chmodSync(c.tokenFile, 0o644);
+  assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+  assert.equal(f.issued(), 3);
+  assert.equal(statSync(c.tokenFile).mode & 0o777, 0o600);
+});

@@ -21,7 +21,7 @@ The [agent setup guide](docs/agent-setup.md) covers discovery, credentials, conf
 
 ## Manual setup
 
-You need Linux, Node.js 24.10+, GitHub CLI signed in, and a compatible T3 server. Build this checkout and add one MCP configuration entry. The first thread-listing or watch call finds local T3 and creates its credential. Follow the [manual steps](docs/setup.md).
+You need macOS or Linux, Node.js 24.10+, GitHub CLI signed in, and a compatible T3 server. Build this checkout and add one MCP configuration entry. The first thread-listing or watch call finds local T3 and creates its credential. Follow the [manual steps](docs/setup.md).
 
 No URL or token settings are needed for a standard local installation. If multiple instances are found, select one with `T3POLL_BASE_DIR`. Choose the destination thread when registering each watch.
 

@@ -388,26 +388,48 @@ export async function runSetup(args: string[]): Promise<void> {
       );
       plan = makePlan();
     }
-    const summary = [
-      `T3: ${plan.baseDir}`,
-      `Codex: ${plan.provider.label}`,
-      `Runtime: ${values["runtime-path"] ? "local build" : `t3poll@${plan.channel}`}`,
-      plan.legacyGlobalEnabled && !plan.disablesLegacy
-        ? "Scope: global t3poll remains available outside T3"
-        : "Scope: this T3 Codex configuration only",
+    const configuration =
+      plan.provider.label === "Codex" ? "Default" : plan.provider.label;
+    const destination = [
+      `T3 Code instance: ${server.origin}`,
+      `Codex configuration: ${configuration}`,
+      `Runtime: ${values["runtime-path"] ? "Local build (no npm updates)" : `t3poll@${plan.channel}`}`,
+    ].join("\n");
+    const actions = [
+      "1. Configure t3poll's PR-watching tools in Codex.",
+      "2. Enable them through this T3 instance's launch arguments.",
+      "3. Set up a managed credential for this T3 instance.",
+      "4. Verify the MCP tools and the connection to T3.",
+      "",
       ...(plan.legacyGlobalEnabled
         ? [
             plan.disablesLegacy
-              ? "Disable the existing global t3poll entry"
-              : "Keep the existing global t3poll entry enabled",
+              ? "Disable the existing global t3poll entry."
+              : "Keep the existing global t3poll entry enabled.",
           ]
         : []),
-      ...plan.edits.map(
-        (e) => `${e.before === e.after ? "Keep" : "Update"}: ${e.path}`,
-      ),
+      plan.legacyGlobalEnabled && !plan.disablesLegacy
+        ? "The global tools will remain available outside T3 Code."
+        : "The tools will be available only in this T3 Codex configuration.",
+      "Changed configuration files will be backed up before writing.",
+      "",
+      "After setup, open a fresh Codex session in T3 to watch a PR.",
     ].join("\n");
-    if (interactive) p.note(summary, "Setup summary");
-    else console.log(summary);
+    if (interactive) {
+      p.note(destination, "Your connection");
+      p.note(actions, "What setup will do");
+    } else console.log(`${destination}\n\n${actions}`);
+    if (values["dry-run"]) {
+      const details = [
+        `T3 data directory: ${plan.baseDir}`,
+        `t3poll state directory: ${plan.stateHome}`,
+        ...plan.edits.map(
+          (e) => `${e.before === e.after ? "Keep" : "Update"}: ${e.path}`,
+        ),
+      ].join("\n");
+      if (interactive) p.note(details, "File details");
+      else console.log(details);
+    }
     if (plan.environmentBlocked) {
       const message = plan.globalEnvironmentScope
         ? "T3CODE_CODEX_LAUNCH_ARGS applies to multiple Codex configurations. Remove it from T3’s launch environment, or move it into the selected provider’s environment settings. Restart T3 and rerun setup."

@@ -34,9 +34,11 @@ Other options are `--codex-home`, `--state-home`, and `--yes`. `--yes` accepts t
 
 ## Configuration and scope
 
-Each T3 home and Codex provider gets a deterministic `t3poll_<id>` MCP entry, disabled by default. Its environment binds the selected T3 home and t3poll state directory. Multiple installations can share Codex configuration without replacing each other's destinations.
+Setup always installs one MCP server named `t3poll`. Stable and nightly are update channels for that same entry. Its environment binds the selected T3 home and t3poll state directory; running setup for another home updates this destination.
 
-The installer appends the corresponding `-c mcp_servers.t3poll_<id>.enabled=true` to the selected T3 provider's launch arguments. It preserves unrelated arguments, Codex text and comments, and other T3 settings. T3 JSON formatting may change. A rerun updates the owned MCP block and does not duplicate launch flags. Unknown entries and damaged managed blocks require correction rather than being overwritten. If a global `mcp_servers.t3poll` entry is enabled, setup asks whether to disable it and recommends Yes. Yes includes the change in the reviewed plan, preserves its other settings and comments, and backs it up. No preserves it and clearly notes that t3poll remains available outside T3. `--yes` accepts the recommended migration; add `--keep-global` to preserve the global entry when scripting setup.
+The installer enables it with `-c mcp_servers.t3poll.enabled=true` in the selected T3 provider's launch arguments. It migrates old managed `t3poll_<id>` entries and their saved enable flags automatically, preserving unrelated servers and arguments. Missing or duplicated old markers are cleaned up during migration. A rerun updates the managed entry without creating another server.
+
+An existing manual `t3poll` entry is replaced with the selected runtime and connection settings, with a backup. If it was globally enabled, setup recommends disabling global access and enabling it through T3's launch arguments. `--keep-global` retains global access while updating the entry.
 
 Configuration files receive adjacent private `.t3poll-<id>.bak` backups before changes. The installer compares the files with the reviewed snapshot and refuses stale writes. If credential verification fails after applying, it restores the previous configuration unless another process has edited it. Backups remain for manual recovery. Adjacent `.t3poll-lock` files prevent overlapping installer writes; after a crashed installer, verify it is no longer running before removing a leftover lock. T3 itself does not participate in those locks, so review-time comparisons and rollback checks also protect against its edits.
 

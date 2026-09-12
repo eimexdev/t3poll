@@ -1,10 +1,6 @@
 import { parseTOML } from "toml-eslint-parser";
-import {
-  disableGlobalEntry,
-  expandInlineServers,
-  recoverManagedEntry,
-} from "./codex-config.js";
-import { createHash, randomUUID } from "node:crypto";
+import { expandInlineServers, recoverManagedEntry } from "./codex-config.js";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   readFileSync,
@@ -266,8 +262,11 @@ export function planInstall(input: {
     userHome,
   );
   const stateHome = resolve(input.stateHome);
-  const server = `t3poll_${createHash("sha256").update(`${baseDir}\n${provider.id}`).digest("hex").slice(0, 12)}`;
-  const saved = provider.config.launchArgs ?? "";
+  const server = "t3poll";
+  const saved = (provider.config.launchArgs ?? "").replace(
+    /(^|\s)((?:--config=|-c=?|-c\s+|--config\s+)["']?)mcp_servers\.(?:"(t3poll_[a-f0-9]{12})"|(t3poll_[a-f0-9]{12}))\.enabled=true(?=["']?(?:\s|$))/g,
+    "$1$2mcp_servers.t3poll.enabled=true",
+  );
   const launchArgs = mergeLaunchArgs(saved, server);
   const override = environment.T3CODE_CODEX_LAUNCH_ARGS?.trim();
   const globalEnvironmentScope =
@@ -308,9 +307,26 @@ export function planInstall(input: {
     !!originalServers.t3poll &&
     object.parse(originalServers.t3poll).enabled !== false;
   const disablesLegacy = legacyGlobalEnabled && input.disableLegacy !== false;
-  let source = expandInlineServers(
-    disablesLegacy ? disableGlobalEntry(originalSource) : originalSource,
+  let source = expandInlineServers(originalSource);
+  const oldServers = new Set(
+    parseTOML(source).comments.flatMap((c) => {
+      const match =
+        /^# t3poll managed (t3poll_[a-f0-9]{12}) (?:begin|end)$/.exec(
+          source.slice(...c.range).trim(),
+        );
+      return match ? [match[1]!] : [];
+    }),
   );
+  for (const oldServer of oldServers)
+    source = recoverManagedEntry(source, oldServer);
+  // Setup owns the conventional t3poll slot, including manual/older installs.
+  const managedStart = "# t3poll managed t3poll begin";
+  const managedEnd = "# t3poll managed t3poll end";
+  const hasMarker = parseTOML(source).comments.some((c) =>
+    [managedStart, managedEnd].includes(source.slice(...c.range).trim()),
+  );
+  if (originalServers.t3poll && !hasMarker)
+    source = recoverManagedEntry(source, server, true);
 
   const start = `# t3poll managed ${server} begin`;
   const end = `# t3poll managed ${server} end`;
@@ -351,7 +367,7 @@ export function planInstall(input: {
       `Codex already has an unmanaged ${server} entry. Rename or remove it before setup.`,
     );
   const channel = releaseChannel(input.version);
-  const block = `${start}\n${stringify({ mcp_servers: { [server]: { enabled: false, command: input.command, args: input.args, startup_timeout_sec: 120, env: { T3POLL_BASE_DIR: baseDir, T3POLL_HOME: stateHome, T3POLL_URL: "", T3POLL_TOKEN_FILE: "", T3POLL_THREAD_ID: "" } } } })}${end}\n`;
+  const block = `${start}\n${stringify({ mcp_servers: { [server]: { enabled: legacyGlobalEnabled && !disablesLegacy, command: input.command, args: input.args, startup_timeout_sec: 120, env: { T3POLL_BASE_DIR: baseDir, T3POLL_HOME: stateHome, T3POLL_URL: "", T3POLL_TOKEN_FILE: "", T3POLL_THREAD_ID: "" } } } })}${end}\n`;
   const configAfter =
     startIndex >= 0
       ? source.slice(0, startIndex) +

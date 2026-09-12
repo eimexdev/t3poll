@@ -370,7 +370,8 @@ test("setup CLI previews without side effects, installs a real MCP runtime, and 
   >;
   assert.equal(servers.t3poll!.enabled, false);
   assert.ok(Object.values(servers).every((server) => server.enabled === false));
-  assert.match(text, /enabled=false # preserve this comment/);
+  assert.match(text, /# preserve this comment/);
+  assert.deepEqual(Object.keys(servers), ["t3poll"]);
   await exec(process.execPath, [...args, "--yes"], { env });
   assert.equal(f.issued(), 1);
   assert.equal(readFileSync(join(codex, "config.toml"), "utf8"), text);

@@ -141,7 +141,11 @@ export function expandInlineServers(source: string): string {
 
 // Broken marker pairs do not define a safe text range. Remove only the named
 // server's syntax nodes and actual marker comments, then verify all other data.
-export function recoverManagedEntry(source: string, server: string): string {
+export function recoverManagedEntry(
+  source: string,
+  server: string,
+  adopt = false,
+): string {
   const ast = parseTOML(source);
   const markers = new Set([
     `# t3poll managed ${server} begin`,
@@ -150,7 +154,7 @@ export function recoverManagedEntry(source: string, server: string): string {
   const comments = ast.comments.filter((c) =>
     markers.has(source.slice(...c.range).trim()),
   );
-  if (!comments.length) return source;
+  if (!comments.length && !adopt) return source;
   const ranges: [number, number][] = comments.map((c) => [...c.range]);
   const owns = (path: (string | number)[]) =>
     path[0] === "mcp_servers" && path[1] === server;

@@ -126,7 +126,7 @@ test("plans write nothing; apply preserves comments, backs up, scopes and reruns
   assert.equal(readFileSync(f.config, "utf8"), f.original);
   assert.equal(readFileSync(f.settings, "utf8"), before);
 });
-test("two T3 homes sharing Codex configuration have separate destinations", (t) => {
+test("setup uses one conventional server name, including when changing T3 homes", (t) => {
   const f = fixture(t);
   const first = planInstall(f.input);
   applyPlan(first);
@@ -138,12 +138,13 @@ test("two T3 homes sharing Codex configuration have separate destinations", (t) 
   );
   const second = planInstall({ ...f.input, baseDir: other });
   applyPlan(second);
-  assert.notEqual(first.server, second.server);
+  assert.equal(first.server, "t3poll");
+  assert.equal(second.server, "t3poll");
   const servers = parse(readFileSync(f.config, "utf8")).mcp_servers as Record<
     string,
     any
   >;
-  assert.equal(servers[first.server].env.T3POLL_BASE_DIR, first.baseDir);
+
   assert.equal(servers[second.server].env.T3POLL_BASE_DIR, second.baseDir);
   assert.equal(servers[first.server].enabled, false);
   assert.equal(servers[second.server].enabled, false);
@@ -210,13 +211,10 @@ test("stale review and concurrent rollback cannot overwrite another edit", (t) =
   assert.throws(() => transaction.rollback(), /changed during setup/);
   assert.equal(readFileSync(f.settings, "utf8"), '{"newerEdit":true}');
 });
-test("invalid TOML and unmanaged collisions are not overwritten", (t) => {
+test("invalid TOML is not overwritten", (t) => {
   const f = fixture(t),
     plan = planInstall(f.input);
-  for (const source of [
-    "invalid = [",
-    `[mcp_servers.${plan.server}]\ncommand="mine"\n`,
-  ]) {
+  for (const source of ["invalid = ["]) {
     writeFileSync(f.config, source);
     assert.throws(() => planInstall(f.input));
     assert.equal(readFileSync(f.config, "utf8"), source);
@@ -272,10 +270,10 @@ test("existing global t3poll is disabled automatically with backup and rollback"
   assert.equal(readFileSync(f.config, "utf8"), source);
   const change = applyPlan(plan);
   const after = readFileSync(f.config, "utf8");
-  assert.ok(after.includes("enabled = false # global"));
+  assert.ok(after.includes("# global"));
   const servers = parse(after).mcp_servers as Record<string, any>;
   assert.equal(servers.t3poll.enabled, false);
-  assert.equal(servers.t3poll.command, "old-runtime");
+  assert.equal(servers.t3poll.command, f.input.command);
   assert.equal(servers[plan.server].enabled, false);
   assert.ok(
     change.backups.some((path) => readFileSync(path, "utf8") === source),
@@ -301,16 +299,18 @@ test("global entry migration preserves quoted keys, inline tables and implicit d
   ]) {
     writeFileSync(f.config, source);
     const before = parse(source) as any;
-    before.mcp_servers.t3poll.enabled = false;
+    delete before.mcp_servers.t3poll;
+    if (!Object.keys(before.mcp_servers).length) delete before.mcp_servers;
     const plan = planInstall(f.input);
     const after = parse(plan.edits[0]!.after) as any;
     delete after.mcp_servers[plan.server];
+    if (!Object.keys(after.mcp_servers).length) delete after.mcp_servers;
     assert.deepEqual(after, before, source);
     assert.equal(readFileSync(f.config, "utf8"), source);
   }
 });
 
-test("declining migration leaves the existing global entry intact", (t) => {
+test("keeping global access updates the runtime without disabling it", (t) => {
   const f = fixture(t);
   const source = '[mcp_servers.t3poll]\ncommand="old"\nenabled=true\n';
   writeFileSync(f.config, source);
@@ -318,7 +318,10 @@ test("declining migration leaves the existing global entry intact", (t) => {
   assert.equal(plan.legacyGlobalEnabled, true);
   assert.equal(plan.disablesLegacy, false);
   applyPlan(plan);
-  assert.ok(readFileSync(f.config, "utf8").startsWith(source));
+  assert.equal(
+    (parse(readFileSync(f.config, "utf8")).mcp_servers as any).t3poll.command,
+    f.input.command,
+  );
   assert.equal(
     (parse(readFileSync(f.config, "utf8")).mcp_servers as any).t3poll.enabled,
     true,
@@ -373,4 +376,52 @@ test("marker text inside TOML values does not claim ownership", (t) => {
     parse(source).description,
   );
   assert.ok(planInstall(f.input).edits.every((e) => e.before === e.after));
+});
+
+test("setup migrates hashed installations and keeps the name across release channels", (t) => {
+  const f = fixture(t);
+  const old = "t3poll_c94bb28565c6";
+  const begin = `# t3poll managed ${old} begin`;
+  const end = `# t3poll managed ${old} end`;
+  const entry = `[mcp_servers.${old}]\ncommand = "old"\nenabled = false\n[mcp_servers.${old}.env]\nT3POLL_BASE_DIR = "old-home"\n`;
+  for (const flag of [
+    `-c mcp_servers.${old}.enabled=true`,
+    `--config='mcp_servers."${old}".enabled=true'`,
+    `-c=mcp_servers.${old}.enabled=true`,
+  ]) {
+    for (const markers of [
+      `${begin}\n${entry}${end}\n`,
+      `${begin}\n${entry}`,
+      `${end}\n`,
+    ]) {
+      const source = f.original + markers;
+      writeFileSync(f.config, source);
+      const settings = JSON.parse(readFileSync(f.settings, "utf8"));
+      settings.providers.codex.launchArgs = `--enable search ${flag}`;
+      writeFileSync(f.settings, JSON.stringify(settings));
+      const plan = planInstall({ ...f.input, version: "0.1.3-nightly.123" });
+      assert.equal(plan.server, "t3poll");
+      assert.equal(plan.channel, "nightly");
+      assert.ok(!plan.launchArgs.includes(old));
+      assert.ok(
+        tokenize(plan.launchArgs).some((arg) =>
+          arg.includes("mcp_servers.t3poll.enabled=true"),
+        ),
+      );
+      const transaction = applyPlan(plan);
+      const after = readFileSync(f.config, "utf8");
+      assert.ok(!after.includes(old));
+      assert.deepEqual(Object.keys(parse(after).mcp_servers as object).sort(), [
+        "other",
+        "t3poll",
+      ]);
+      assert.ok(
+        planInstall({ ...f.input, version: "0.1.3" }).edits.every(
+          (e) => e.before === e.after,
+        ),
+      );
+      transaction.rollback();
+      assert.equal(readFileSync(f.config, "utf8"), source);
+    }
+  }
 });

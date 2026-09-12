@@ -111,7 +111,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
           RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
-        run: npm publish "release/t3poll-$RELEASE_VERSION.tgz" --access public --tag "$RELEASE_CHANNEL" --provenance
+        run: npm publish "./release/t3poll-$RELEASE_VERSION.tgz" --access public --tag "$RELEASE_CHANNEL" --provenance
       - name: Record the release and source commit
         env:
           GH_TOKEN: ${{ github.token }}

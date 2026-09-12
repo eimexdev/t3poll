@@ -50,7 +50,7 @@ function canReuse(metadata: Managed): boolean {
   );
 }
 
-function candidateHomes(config: Config): string[] {
+export function candidateHomes(config: Config): string[] {
   if (config.baseDir) return [config.baseDir];
   const homes = new Set([
     resolve(process.env.T3CODE_HOME ?? join(homedir(), ".t3")),

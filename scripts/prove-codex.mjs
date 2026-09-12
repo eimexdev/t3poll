@@ -8,11 +8,12 @@ import {
   mkdtempSync,
   mkdirSync,
   writeFileSync,
+  readFileSync,
   copyFileSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, delimiter } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import assert from "node:assert/strict";
 
@@ -36,31 +37,14 @@ const server = spawn(process.execPath, [join(pkg, "dist/bin.mjs"), "serve"], {
   env: { ...process.env, T3CODE_HOME: base },
   stdio: ["ignore", "pipe", "pipe"],
 });
-writeFileSync(
-  join(home, "config.toml"),
-  `
-[mcp_servers.t3poll]
-enabled = false
-command = ${JSON.stringify(process.execPath)}
-args = [${JSON.stringify(resolve(process.env.T3POLL_TEST_CLI ?? "dist/cli.js"))}, "mcp"]
-[mcp_servers.t3poll.env]
-T3POLL_HOME = ${JSON.stringify(join(root, "poll"))}
-T3POLL_BASE_DIR = ${JSON.stringify(base)}
-`,
-);
+let mcpName;
+let launchArgs;
 async function check(enabled) {
-  const child = spawn(
-    binary,
-    [
-      "app-server",
-      ...(enabled ? ["-c", "mcp_servers.t3poll.enabled=true"] : []),
-    ],
-    {
-      env: { ...process.env, CODEX_HOME: home },
-      cwd: root,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
+  const child = spawn(binary, ["app-server", ...(enabled ? launchArgs : [])], {
+    env: { ...process.env, CODEX_HOME: home },
+    cwd: root,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   let errors = "";
   child.stderr.on("data", (chunk) => {
     errors = (errors + chunk).slice(-3000);
@@ -99,7 +83,7 @@ async function check(enabled) {
     );
     for (let attempt = 0; attempt < 40; attempt++) {
       const result = await rpc("mcpServerStatus/list", {});
-      const status = result.data.find((item) => item.name === "t3poll");
+      const status = result.data.find((item) => item.name === mcpName);
       if (!enabled) {
         assert.deepEqual(Object.keys(status?.tools ?? {}), []);
         return;
@@ -133,10 +117,45 @@ async function check(enabled) {
 }
 try {
   await once(server.stdout, "data");
+  const { executable } = await import("../tests/fixtures/executable.mjs");
+  const { tokenize } = await import("../dist/install-plan.js");
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  executable(bin, "gh", "process.exit(0)");
+  writeFileSync(
+    join(base, "userdata/settings.json"),
+    JSON.stringify({ providers: { codex: { binaryPath: binary } } }),
+  );
+  const cli = resolve(process.env.T3POLL_TEST_CLI ?? "dist/cli.js");
+  await promisify(execFile)(
+    process.execPath,
+    [
+      cli,
+      "setup",
+      "--yes",
+      "--base-dir",
+      base,
+      "--codex-home",
+      home,
+      "--state-home",
+      join(root, "poll"),
+      "--runtime-path",
+      cli,
+    ],
+    {
+      env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` },
+      timeout: 60000,
+    },
+  );
+  launchArgs = tokenize(
+    JSON.parse(readFileSync(join(base, "userdata/settings.json"), "utf8"))
+      .providers.codex.launchArgs,
+  );
+  mcpName = launchArgs.at(-1).split(".")[1];
   await check(false);
   await check(true);
   console.log(
-    "PASS: real Codex hides t3poll by default and exposes list/stop/watch with the T3 launch override. No model calls or user configuration changes.",
+    "PASS: real installer completed; real Codex hides t3poll by default and exposes list/stop/watch with the T3 launch override. No model calls or user configuration changes.",
   );
 } finally {
   const exit = once(server, "exit");

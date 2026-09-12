@@ -6,6 +6,7 @@ import { runWorker } from "./worker.js";
 
 const help = `t3poll — watch a GitHub PR and wake a T3 thread
 
+  t3poll setup                       Configure Codex inside T3
   t3poll mcp                         Start the stdio MCP server
   t3poll watch <PR URL> --thread <id>  Watch for new activity
   t3poll list [--threads]             Show watches; optionally list T3 threads
@@ -21,6 +22,11 @@ Watches stop on merge/closure, cancellation, or after 24 hours.
 `;
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "setup") {
+    const { runSetup } = await import("./installer.js");
+    await runSetup(process.argv.slice(3));
+    return;
+  }
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {

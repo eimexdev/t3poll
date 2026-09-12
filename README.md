@@ -4,6 +4,18 @@ Watch a GitHub PR and notify an existing T3 Code conversation when something cha
 
 Three MCP tools: `watch`, `list`, and `stop`. `watch` automatically starts a background worker that polls every 60 seconds without invoking a model. It survives MCP disconnection and exits when there is nothing left to watch. No skill or service installation is required.
 
+## Setup wizard
+
+With T3 running, build this checkout and run the installer:
+
+```sh
+npm ci
+npm run build
+node dist/cli.js setup --runtime-path ./dist/cli.js
+```
+
+It discovers T3, configures Codex with T3-only tools, preserves existing launch arguments, backs up changed files, and verifies the connection. Add `--dry-run` to preview. The local runtime option works before npm publication; after release, use `npx t3poll@latest setup` or `npx t3poll@nightly setup`. See the [installer guide](docs/installer.md).
+
 ## Agent setup
 
 Copy this into your coding agent:

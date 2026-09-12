@@ -312,3 +312,121 @@ test("failed verification revokes its session and retries failed cleanup before 
   );
   assert.equal(existsSync(`${c.tokenFile}.pending-session.json`), false);
 });
+
+test("setup CLI previews without side effects, installs a real MCP runtime, and reruns", async (t) => {
+  const { executable } = await import("./fixtures/executable.mjs");
+  const { delimiter } = await import("node:path");
+  const { parse } = await import("smol-toml");
+  const f = await fixture(t);
+  const bin = join(f.root, "bin");
+  mkdirSync(bin);
+  executable(bin, "gh", "process.exit(0)");
+  const codexBinary = executable(
+    bin,
+    "codex",
+    'console.log("codex-cli fixture")',
+  );
+  writeFileSync(
+    join(f.base, "userdata/settings.json"),
+    JSON.stringify({ providers: { codex: { binaryPath: codexBinary } } }),
+  );
+  const codex = join(f.root, "codex");
+  const env = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` };
+  const args = [
+    resolve("dist/cli.js"),
+    "setup",
+    "--base-dir",
+    f.base,
+    "--codex-home",
+    codex,
+    "--state-home",
+    f.home,
+    "--runtime-path",
+    resolve("dist/cli.js"),
+  ];
+  const preview = await exec(process.execPath, [...args, "--dry-run"], { env });
+  assert.match(preview.stdout, /Dry run complete/);
+  assert.equal(existsSync(codex), false);
+  assert.equal(existsSync(f.home), false);
+  assert.equal(f.issued(), 0);
+  mkdirSync(codex);
+  const legacy =
+    '[mcp_servers.t3poll]\ncommand="old-runtime"\nenabled=true # preserve this comment\n';
+  writeFileSync(join(codex, "config.toml"), legacy);
+  const keep = await exec(
+    process.execPath,
+    [...args, "--dry-run", "--keep-global"],
+    { env },
+  );
+  assert.match(keep.stdout, /Keep the existing global/);
+  assert.equal(readFileSync(join(codex, "config.toml"), "utf8"), legacy);
+  const installed = await exec(process.execPath, [...args, "--yes"], { env });
+  assert.match(installed.stdout, /Setup complete/);
+  assert.equal(f.issued(), 1);
+  const text = readFileSync(join(codex, "config.toml"), "utf8");
+  const servers = parse(text).mcp_servers as Record<
+    string,
+    { enabled: boolean }
+  >;
+  assert.equal(servers.t3poll!.enabled, false);
+  assert.ok(Object.values(servers).every((server) => server.enabled === false));
+  assert.match(text, /enabled=false # preserve this comment/);
+  await exec(process.execPath, [...args, "--yes"], { env });
+  assert.equal(f.issued(), 1);
+  assert.equal(readFileSync(join(codex, "config.toml"), "utf8"), text);
+  const { Store } = await import("../src/store.js");
+  const store = new Store(f.home);
+  assert.equal(store.worker(), undefined);
+  assert.equal(store.all().length, 0);
+  store.close();
+});
+
+test("installer restores configs when credential verification fails", async (t) => {
+  const { executable } = await import("./fixtures/executable.mjs");
+  const { delimiter } = await import("node:path");
+  const f = await fixture(t),
+    bin = join(f.root, "bin"),
+    codex = join(f.root, "codex");
+  mkdirSync(bin);
+  mkdirSync(codex);
+  executable(bin, "gh", "process.exit(0)");
+  const codexBinary = executable(
+    bin,
+    "codex",
+    'console.log("codex-cli fixture")',
+  );
+  writeFileSync(
+    join(f.base, "userdata/settings.json"),
+    JSON.stringify({ providers: { codex: { binaryPath: codexBinary } } }),
+  );
+  const original = '# keep\nmodel="example"\n';
+  writeFileSync(join(codex, "config.toml"), original);
+  writeFileSync(join(f.base, "reject"), "yes");
+  await assert.rejects(
+    exec(
+      process.execPath,
+      [
+        resolve("dist/cli.js"),
+        "setup",
+        "--yes",
+        "--base-dir",
+        f.base,
+        "--codex-home",
+        codex,
+        "--state-home",
+        f.home,
+        "--runtime-path",
+        resolve("dist/cli.js"),
+      ],
+      {
+        env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` },
+      },
+    ),
+  );
+  assert.equal(readFileSync(join(codex, "config.toml"), "utf8"), original);
+  assert.equal(
+    JSON.parse(readFileSync(join(f.base, "userdata/settings.json"), "utf8"))
+      .providers.codex.binaryPath,
+    codexBinary,
+  );
+});

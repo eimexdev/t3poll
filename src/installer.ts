@@ -1,0 +1,509 @@
+import * as p from "@clack/prompts";
+import { parseArgs, promisify } from "node:util";
+import { execFile } from "node:child_process";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
+import { dirname, join, resolve, delimiter } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { configFromEnv } from "./config.js";
+import {
+  candidateHomes,
+  inspectLocal,
+  connection,
+  type LocalT3,
+} from "./setup.js";
+import { readLocalProcess } from "./local-process.js";
+import { T3 } from "./t3.js";
+import {
+  applyPlan,
+  planInstall,
+  providers,
+  readOptional,
+  releaseChannel,
+  expandPath,
+  type InstallPlan,
+} from "./install-plan.js";
+
+const exec = promisify(execFile);
+const pkg = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
+class Cancelled extends Error {}
+async function answer<T>(prompt: Promise<T | symbol>): Promise<T> {
+  const value = await prompt;
+  if (p.isCancel(value)) throw new Cancelled();
+  return value as T;
+}
+function npmCli(): string {
+  const candidates = [
+    process.env.npm_execpath,
+    join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js"),
+    join(dirname(process.execPath), "../lib/node_modules/npm/bin/npm-cli.js"),
+    "/usr/share/nodejs/npm/bin/npm-cli.js",
+  ];
+  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+    const command = join(dir, process.platform === "win32" ? "npm.cmd" : "npm");
+    if (existsSync(command)) {
+      candidates.push(realpathSync(command));
+      candidates.push(join(dir, "node_modules/npm/bin/npm-cli.js"));
+    }
+  }
+  const found = candidates.find(
+    (path) => path?.endsWith("npm-cli.js") && existsSync(path),
+  );
+  if (!found)
+    throw new Error(
+      "Cannot locate npm's npm-cli.js. Install Node.js with npm, then run setup again.",
+    );
+  return realpathSync(found);
+}
+function runtime(local: string | undefined): {
+  command: string;
+  args: string[];
+} {
+  if (local) {
+    const cli = realpathSync(expandPath(local));
+    return { command: process.execPath, args: [cli, "mcp"] };
+  }
+  return {
+    command: process.execPath,
+    args: [
+      npmCli(),
+      "exec",
+      "--yes",
+      `--package=t3poll@${releaseChannel(pkg.version)}`,
+      "--",
+      "t3poll",
+      "mcp",
+    ],
+  };
+}
+async function checkCodex(
+  plan: InstallPlan,
+  environment: Record<string, string>,
+  cwd: string,
+): Promise<void> {
+  const binary = plan.provider.config.binaryPath?.trim() || "codex";
+  const expanded =
+    binary.includes("/") || binary.includes("\\") || binary.startsWith("~")
+      ? expandPath(binary, cwd, environment.USERPROFILE || environment.HOME)
+      : binary;
+  let command = expanded;
+  let args = ["--version"];
+  if (process.platform === "win32") {
+    // npm's Windows Codex shim is a batch file. Launch its JS entry through
+    // Node directly so neither spaces nor shell metacharacters need escaping.
+    const dirs =
+      expanded === "codex"
+        ? (
+            environment.PATH ||
+            environment.Path ||
+            process.env.PATH ||
+            ""
+          ).split(delimiter)
+        : [dirname(expanded)];
+    for (const dir of dirs) {
+      const script = join(dir, "node_modules/@openai/codex/bin/codex.js");
+      if (existsSync(script)) {
+        command = process.execPath;
+        args = [script, "--version"];
+        break;
+      }
+      const native = join(dir, "codex.exe");
+      if (expanded === "codex" && existsSync(native)) {
+        command = native;
+        break;
+      }
+    }
+  }
+  try {
+    await exec(command, args, {
+      cwd,
+      env: { ...process.env, ...environment },
+      timeout: 15_000,
+      windowsHide: true,
+    });
+  } catch {
+    throw new Error(
+      "Cannot run the selected Codex executable. Install Codex or correct its binary path in T3 settings, then rerun setup.",
+    );
+  }
+}
+async function checkT3Support(server: LocalT3): Promise<void> {
+  let supported: boolean;
+  if (server.electron) {
+    const { stdout } = await exec(
+      server.node,
+      [
+        "-e",
+        'process.stdout.write(String(require("node:fs").readFileSync(process.argv[1],"utf8").includes("T3CODE_CODEX_LAUNCH_ARGS")))',
+        server.cli,
+      ],
+      {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+        timeout: 15000,
+        windowsHide: true,
+      },
+    );
+    supported = stdout.trim() === "true";
+  } else
+    supported = readFileSync(server.cli, "utf8").includes(
+      "T3CODE_CODEX_LAUNCH_ARGS",
+    );
+  if (!supported)
+    throw new Error(
+      "This T3 build could not be verified to support Codex launch arguments. Update T3 before T3-only setup.",
+    );
+}
+function liveEnvironment(server: LocalT3) {
+  const state = JSON.parse(
+    readFileSync(join(server.baseDir, "userdata/server-runtime.json"), "utf8"),
+  );
+  return readLocalProcess(state.pid);
+}
+export async function verifyRuntime(plan: InstallPlan): Promise<void> {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+  Object.assign(env, {
+    T3POLL_BASE_DIR: plan.baseDir,
+    T3POLL_HOME: plan.stateHome,
+    T3POLL_URL: "",
+    T3POLL_TOKEN_FILE: "",
+    T3POLL_THREAD_ID: "",
+  });
+  const client = new Client({ name: "t3poll-setup", version: pkg.version });
+  const transport = new StdioClientTransport({
+    command: plan.command,
+    args: plan.args,
+    env,
+    stderr: "pipe",
+  });
+  // Drain child stderr without printing possible inherited configuration secrets.
+  transport.stderr?.on("data", () => {});
+  const timeout = setTimeout(() => {
+    void transport.close();
+  }, 120_000);
+  try {
+    await client.connect(transport);
+    const result = await client.listTools();
+    for (const name of ["watch", "list", "stop"])
+      if (!result.tools.some((t) => t.name === name))
+        throw new Error(`MCP runtime is missing ${name}.`);
+  } catch {
+    throw new Error(
+      "MCP runtime verification failed. Check npm/network access, or use --runtime-path with a local build before the first npm release.",
+    );
+  } finally {
+    clearTimeout(timeout);
+    await client.close();
+  }
+}
+
+export async function runSetup(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    options: {
+      "base-dir": { type: "string" },
+      provider: { type: "string" },
+      "codex-home": { type: "string" },
+      "state-home": { type: "string" },
+      "runtime-path": { type: "string" },
+      "dry-run": { type: "boolean" },
+      "keep-global": { type: "boolean" },
+      yes: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  if (positionals.length) throw new Error("Unexpected setup arguments.");
+  if (values.help) {
+    console.log(
+      `t3poll setup [--base-dir <T3 home>] [--provider <id>] [--codex-home <path>]\n             [--state-home <path>] [--dry-run] [--yes] [--keep-global]\n             [--runtime-path <built cli.js>]\n\nThe invoked package determines Stable or Nightly. --dry-run writes nothing.\n--runtime-path uses a local build instead of npm channel updates.\n--keep-global preserves an existing enabled global t3poll entry.\n--yes accepts the recommended plan; ambiguous instances still require explicit selection.`,
+    );
+    return;
+  }
+  const interactive =
+    !!process.stdin.isTTY && !!process.stdout.isTTY && !values.yes;
+  if (!interactive && !values.yes && !values["dry-run"])
+    throw new Error(
+      "Run setup in a terminal, or use --yes with explicit selections. Use --dry-run to preview.",
+    );
+  try {
+    if (interactive) {
+      p.intro("Welcome to t3poll");
+      p.log.info(
+        "Set up PR notifications for Codex sessions running inside T3 Code.",
+      );
+      if (
+        !(await answer(
+          p.confirm({ message: "Proceed with setup?", initialValue: true }),
+        ))
+      )
+        throw new Cancelled();
+    }
+    while (true) {
+      try {
+        await exec("gh", ["auth", "status"], {
+          timeout: 15_000,
+          windowsHide: true,
+        });
+        break;
+      } catch {
+        if (!interactive || values["dry-run"]) {
+          if (values["dry-run"]) {
+            console.log(
+              "GitHub CLI is unavailable or not signed in. Run gh auth login before applying.",
+            );
+            break;
+          }
+          throw new Error(
+            "GitHub CLI is unavailable or not signed in. Install gh, then run gh auth login in another terminal.",
+          );
+        }
+        p.log.warn(
+          "GitHub CLI is unavailable or not signed in. Install gh if needed, then run gh auth login in another terminal.",
+        );
+        if (
+          !(await answer(
+            p.confirm({ message: "Check again?", initialValue: true }),
+          ))
+        )
+          throw new Cancelled();
+      }
+    }
+    let selectedHome = values["base-dir"]
+      ? expandPath(values["base-dir"])
+      : undefined;
+    let server: LocalT3 | undefined;
+    while (!server) {
+      const homes = selectedHome
+        ? [selectedHome]
+        : candidateHomes(configFromEnv());
+      const found = [
+        ...new Map(
+          homes
+            .map((h) => inspectLocal(h))
+            .filter((s): s is LocalT3 => !!s)
+            .map((s) => [s.baseDir, s]),
+        ).values(),
+      ];
+      if (found.length === 1) server = found[0];
+      else if (!interactive)
+        throw new Error(
+          found.length
+            ? "Multiple T3 instances found. Pass --base-dir."
+            : "No supported running T3 instance found. Open T3 and pass --base-dir if needed.",
+        );
+      else {
+        if (found.length > 1) {
+          const picked = await answer(
+            p.select({
+              message: "Which T3 instance?",
+              options: [
+                ...found.map((s) => ({
+                  value: s.baseDir,
+                  label: s.baseDir,
+                  hint: s.origin,
+                })),
+                { value: "custom", label: "Enter another T3 data directory" },
+              ],
+            }),
+          );
+          if (picked !== "custom") {
+            server = found.find((s) => s.baseDir === picked);
+            continue;
+          }
+        } else
+          p.log.warn(
+            "No supported running T3 instance found. Open T3, then enter its data directory.",
+          );
+        selectedHome = expandPath(
+          await answer(
+            p.text({
+              message: "T3 data directory",
+              initialValue: selectedHome ?? homes[0],
+              validate: (v) => (!v?.trim() ? "Enter a directory." : undefined),
+            }),
+          ),
+        );
+      }
+    }
+    await checkT3Support(server);
+    const available = providers(
+      JSON.parse(
+        readOptional(join(server.baseDir, "userdata/settings.json")) ?? "{}",
+      ),
+    );
+    if (!available.length)
+      throw new Error("Enable a Codex provider in T3 before running setup.");
+    let providerId = values.provider;
+    if (!providerId) {
+      if (available.length === 1) providerId = available[0]!.id;
+      else if (!interactive)
+        throw new Error(
+          `Choose a Codex configuration with --provider: ${available.map((p) => p.id).join(", ")}`,
+        );
+      else
+        providerId = await answer(
+          p.select({
+            message: "Which Codex configuration?",
+            options: available.map((p) => ({
+              value: p.id,
+              label: p.label,
+              hint: p.id,
+            })),
+          }),
+        );
+    }
+    const codexHome = values["codex-home"];
+    const stateHome = expandPath(values["state-home"] ?? configFromEnv().home);
+    const launch = runtime(values["runtime-path"]);
+    let disableLegacy = !values["keep-global"];
+    const live = liveEnvironment(server);
+    const makePlan = () =>
+      planInstall({
+        baseDir: server.baseDir,
+        providerId,
+        stateHome,
+        version: pkg.version,
+        ...launch,
+        processEnv: live.env,
+        processCwd: live.cwd,
+        disableLegacy,
+        ...(codexHome ? { codexHome } : {}),
+      });
+    let plan = makePlan();
+    if (interactive && plan.legacyGlobalEnabled && !values["keep-global"]) {
+      p.note(
+        "t3poll is designed for Codex sessions running inside T3 Code. We recommend keeping the global MCP entry disabled and enabling it through T3 Code's launch arguments, so its tools appear in the sessions where they work as intended.",
+        "Keep t3poll scoped to T3 Code",
+      );
+      disableLegacy = await answer(
+        p.confirm({
+          message: "Disable the existing global t3poll entry?",
+          initialValue: true,
+        }),
+      );
+      plan = makePlan();
+    }
+    const configuration =
+      plan.provider.label === "Codex" ? "Default" : plan.provider.label;
+    const destination = [
+      `T3 Code instance: ${server.origin}`,
+      `Codex configuration: ${configuration}`,
+      `Runtime: ${values["runtime-path"] ? "Local build (no npm updates)" : `t3poll@${plan.channel}`}`,
+    ].join("\n");
+    const actions = [
+      "1. Configure t3poll's PR-watching tools in Codex.",
+      "2. Enable them through this T3 instance's launch arguments.",
+      "3. Set up a managed credential for this T3 instance.",
+      "4. Verify the MCP tools and the connection to T3.",
+      "",
+      ...(plan.legacyGlobalEnabled
+        ? [
+            plan.disablesLegacy
+              ? "Disable the existing global t3poll entry."
+              : "Keep the existing global t3poll entry enabled.",
+          ]
+        : []),
+      plan.legacyGlobalEnabled && !plan.disablesLegacy
+        ? "The global tools will remain available outside T3 Code."
+        : "The tools will be available only in this T3 Codex configuration.",
+      "Changed configuration files will be backed up before writing.",
+      "",
+      "After setup, open a fresh Codex session in T3 to watch a PR.",
+    ].join("\n");
+    if (interactive) {
+      p.note(destination, "Your connection");
+      p.note(actions, "What setup will do");
+    } else console.log(`${destination}\n\n${actions}`);
+    if (values["dry-run"]) {
+      const details = [
+        `T3 data directory: ${plan.baseDir}`,
+        `t3poll state directory: ${plan.stateHome}`,
+        ...plan.edits.map(
+          (e) => `${e.before === e.after ? "Keep" : "Update"}: ${e.path}`,
+        ),
+      ].join("\n");
+      if (interactive) p.note(details, "File details");
+      else console.log(details);
+    }
+    if (plan.environmentBlocked) {
+      const message = plan.globalEnvironmentScope
+        ? "T3CODE_CODEX_LAUNCH_ARGS applies to multiple Codex configurations. Remove it from T3’s launch environment, or move it into the selected provider’s environment settings. Restart T3 and rerun setup."
+        : `T3CODE_CODEX_LAUNCH_ARGS overrides saved launch arguments.\nKeep your existing arguments and add:\n-c mcp_servers.${plan.server}.enabled=true\nOr remove the environment override. Restart T3, then rerun setup.`;
+      if (values["dry-run"]) {
+        console.log(message);
+        return;
+      }
+      throw new Error(message);
+    }
+    if (values["dry-run"]) {
+      console.log("Dry run complete. No files or credentials changed.");
+      return;
+    }
+    if (
+      interactive &&
+      !(await answer(
+        p.confirm({ message: "Install t3poll?", initialValue: true }),
+      ))
+    )
+      throw new Cancelled();
+    // Verify the exact runtime command before modifying configuration. No watch/list
+    // calls: list can restart workers, so setup uses only the MCP tool catalog.
+    if (interactive) p.log.step("Checking MCP runtime");
+    const codexProcess = liveEnvironment(server);
+    await checkCodex(
+      plan,
+      { ...codexProcess.env, ...plan.provider.environment },
+      codexProcess.cwd,
+    );
+    await verifyRuntime(plan);
+    const current = inspectLocal(server.baseDir);
+    if (!current || current.origin !== server.origin)
+      throw new Error("T3 changed during setup. Run setup again.");
+    const latestEnv = liveEnvironment(current);
+    const rechecked = planInstall({
+      baseDir: server.baseDir,
+      providerId,
+      stateHome,
+      version: pkg.version,
+      ...launch,
+      processEnv: latestEnv.env,
+      processCwd: latestEnv.cwd,
+      disableLegacy,
+      ...(codexHome ? { codexHome } : {}),
+    });
+    if (JSON.stringify(rechecked) !== JSON.stringify(plan))
+      throw new Error(
+        "Configuration changed during setup. Review it again by rerunning setup.",
+      );
+    const transaction = applyPlan(plan);
+    try {
+      const credential = await connection({
+        home: plan.stateHome,
+        baseDir: plan.baseDir,
+      });
+      await new T3(credential.origin, credential.tokenFile).threads();
+    } catch (error) {
+      transaction.rollback();
+      throw error;
+    }
+    for (const backup of transaction.backups) console.log(`Backup: ${backup}`);
+    const done =
+      (plan.legacyGlobalEnabled && !plan.disablesLegacy
+        ? "The existing global t3poll entry remains enabled outside T3. "
+        : "") +
+      "Setup complete. Open a fresh Codex session in the selected T3 instance to use t3poll. Existing sessions keep their current tools.";
+    if (interactive) p.outro(done);
+    else console.log(done);
+  } catch (error) {
+    if (error instanceof Cancelled) {
+      p.cancel("Setup cancelled.");
+      return;
+    }
+    throw error;
+  }
+}

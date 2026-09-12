@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -7,7 +8,6 @@ import {
   writeFileSync,
   mkdirSync,
   symlinkSync,
-  rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -226,7 +226,7 @@ for (const ambiguous of [false, true])
         store.close();
         server.closeAllConnections();
         await new Promise<void>((r) => server.close(() => r()));
-        rmSync(home, {
+        await rm(home, {
           recursive: true,
           force: true,
           maxRetries: 20,

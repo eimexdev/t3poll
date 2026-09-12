@@ -163,12 +163,10 @@ export async function runWorker(home: string): Promise<void> {
   // Only a successfully loaded candidate advertises itself. A broken installation
   // cannot ask the healthy worker to retire.
   store.offer(runtime);
-  const deadline = Date.now() + 90_000;
   while (!store.lease(owner, process.pid, Date.now(), runtime.version)) {
     const current = store.worker();
     if (current && !alive(current.pid)) store.clearDeadWorker(current.pid);
     if (
-      Date.now() >= deadline ||
       !store.work().length ||
       newer(store.target()!.version, runtime.version) ||
       (current?.version && !newer(runtime.version, current.version))

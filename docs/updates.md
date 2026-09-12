@@ -20,6 +20,6 @@ The state directory remembers the newest successfully loaded runtime's version a
 
 A failed download or candidate that cannot load leaves the current worker alone. An incompatible database version fails before the candidate advertises itself. State schema version 1 is preserved with additive coordination tables, so this release does not rewrite watch records.
 
-If a candidate crashes after advertising readiness, saved watches remain intact. An attached MCP session retries worker startup within 30 seconds, or `list` retries immediately. Without an attached session, a failed successor may leave monitoring paused until the next command. Candidate lease acquisition waits up to 90 seconds. An in-flight operation is never killed to meet that deadline.
+If a candidate crashes after advertising readiness, saved watches remain intact. An attached MCP session retries worker startup within 30 seconds, or `list` retries immediately. Without an attached session, a failed successor may leave monitoring paused until the next command. The detached candidate waits until the old worker drains, even after the initiating CLI call returns. It exits if there is no work left or another candidate has already taken over.
 
 Keep the remembered package files installed while using that state directory. If npm's cache is manually cleared, run the same or a newer package again to restore a usable runtime. A runtime error appears in `list`; inspect `worker.log` under `T3POLL_HOME` for details.

@@ -162,8 +162,20 @@ for (const ambiguous of [false, true])
         assert.equal(store.worker()!.pid, initial.worker.pid);
         assert.deepEqual(store.get(watch.id)!.command, frozen);
         assert.equal(commands.length, 1);
-        finish!();
-        const [upgraded, concurrent] = await upgrading;
+        if (!ambiguous) {
+          // The one-shot callers return while the worker is still draining.
+          // Their detached candidates must remain ready to take over afterward.
+          const waiting = await upgrading;
+          assert.ok(waiting.every((result) => result.worker.updating));
+          assert.equal(store.worker()!.pid, initial.worker.pid);
+          finish!();
+          await until(
+            () => store.worker()?.version === "0.1.1-nightly.20260912000001",
+          );
+        } else finish!();
+        const [upgraded, concurrent] = ambiguous
+          ? await upgrading
+          : await Promise.all([list(next), list(next)]);
         assert.equal(upgraded.worker.pid, concurrent.worker.pid);
         assert.notEqual(upgraded.worker.pid, initial.worker.pid);
         assert.equal(upgraded.worker.version, "0.1.1-nightly.20260912000001");

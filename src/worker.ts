@@ -227,6 +227,7 @@ export async function ensureWorker(store: Store): Promise<{
   pid: number | null;
   version?: string;
   updating?: boolean;
+  error?: string;
 }> {
   if (!store.work().length) return { pid: null };
   const previous = store.worker();
@@ -270,8 +271,18 @@ export async function ensureWorker(store: Store): Promise<{
     if (spawnError || exited) break;
     await delay(100);
   }
-  if (!spawnError && !exited && previous && alive(previous.pid))
-    return { pid: previous.pid, version: previous.version, updating: true };
+  const current = store.worker();
+  if (current && current.expires > Date.now() && alive(current.pid))
+    return {
+      pid: current.pid,
+      version: current.version,
+      ...(!spawnError && !exited
+        ? { updating: true }
+        : {
+            error:
+              "Worker update failed; the existing worker is still running. Run t3poll list to retry; inspect worker.log in T3POLL_HOME.",
+          }),
+    };
   throw new Error(
     "Watch saved, but worker startup failed. Run t3poll list to retry startup; inspect worker.log in T3POLL_HOME.",
   );

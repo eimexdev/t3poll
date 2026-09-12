@@ -183,10 +183,9 @@ for (const ambiguous of [false, true])
         assert.equal(saved.lastDelivery!.messageId, frozen.message.messageId);
         assert.equal(commands.length, ambiguous ? 2 : 1);
         assert.equal((await list(old)).worker.pid, upgraded.worker.pid);
-        assert.match(
-          (await list(broken)).worker.error,
-          /worker startup failed/,
-        );
+        const failedUpdate = await list(broken);
+        assert.match(failedUpdate.worker.error, /Worker update failed/);
+        assert.equal(failedUpdate.worker.pid, upgraded.worker.pid);
         assert.equal(store.worker()!.pid, upgraded.worker.pid);
         assert.equal(store.target()!.version, upgraded.worker.version);
         // Retained runtime also wins when an old session starts a worker after idle.

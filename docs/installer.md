@@ -22,7 +22,7 @@ There is no release-channel question. A stable package configures `latest`; a pa
 
 Setup checks GitHub sign-in and finds supported running local T3 instances from `T3CODE_HOME`, the default home, and ancestor `.t3` directories. It asks you to choose when more than one is found. A custom directory can identify other installations. It reads both legacy `providers.codex` and named `providerInstances` settings, with explicit instances taking precedence.
 
-Review the T3 instance, Codex configuration, paths, runtime, and scope before applying. The review screen lets you change the instance, provider, or paths. To preview from a script without changing files or credentials:
+Setup opens with a welcome and a Yes/No prompt to proceed. It asks for an instance or provider only when selection is needed, and offers migration if an existing global entry is enabled. A brief setup summary is followed by an Install confirmation. Custom paths can be supplied through command-line options. To preview from a script without changing files or credentials:
 
 ```sh
 node dist/cli.js setup --base-dir /path/to/t3 --provider codex --dry-run

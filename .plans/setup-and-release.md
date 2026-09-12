@@ -1,14 +1,14 @@
 # Setup and release work order
 
-Status: Windows x64 support is implemented and tested on Gideon; see [verification](../docs/compatibility.md#windows-verification). The setup installer is implemented; see [installer usage](../docs/installer.md). Automatic update handoff and the release workflow remain planned.
+Status: Windows x64 support is implemented and tested on Gideon; see [verification](../docs/compatibility.md#windows-verification). The setup installer is implemented; see [installer usage](../docs/installer.md). The npm release workflow is implemented; see [release operations](../docs/releases.md). Automatic update handoff remains planned.
 
 ## Order of work
 
 1. Establish a native Windows test environment and prove the connection and worker behavior before finalizing the wizard's platform assumptions. Add a Windows CI lane. WSL tests do not establish native Windows support.
 2. Build the TypeScript `t3poll setup` wizard for Codex inside T3, reusing discovery and managed credentials. Implement Windows support alongside the shared setup code once the platform approach is proven.
-3. Implement and test automatic worker handoff during updates. Preserve active watches and pending deliveries across versions.
-4. Test packed installations on Windows, macOS, and Linux, including real T3 and fresh Codex sessions. Windows support is a release requirement.
-5. Publish nightly builds automatically after checks, with manually triggered stable releases from a commit already published and tested on nightly. Use npm trusted publishing when configured.
+3. Publish an initial nightly and enable trusted GitHub publishing, with packed-install checks on Linux, macOS, and Windows.
+4. Implement and test automatic worker handoff against published versions, preserving active watches and pending deliveries.
+5. Manually publish stable from a commit already tested on nightly after upgrade verification.
 
 ## Windows proof
 

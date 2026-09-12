@@ -1,6 +1,14 @@
 # Setup installer
 
-Build the checkout and run setup with T3 open and GitHub CLI signed in:
+With T3 open and GitHub CLI signed in, run the published installer:
+
+```sh
+npx t3poll@latest setup
+```
+
+For an agent-driven installation, follow [agent setup](agent-setup.md) for preview, noninteractive application, and verification.
+
+For development from a checkout:
 
 ```sh
 npm ci
@@ -8,11 +16,7 @@ npm run build
 node dist/cli.js setup --runtime-path ./dist/cli.js
 ```
 
-`--runtime-path` uses this checkout's built CLI. Keep the checkout in place. To install the published package without a checkout, use:
-
-```sh
-npx t3poll@latest setup
-```
+`--runtime-path` uses this checkout's built CLI. Keep the checkout in place.
 
 Use `@nightly` instead to follow automatic nightly releases. There is no release-channel question. A stable package configures `latest`; a package whose version contains the nightly prerelease identifier configures `nightly`. npm does not pass its original tag to the program, so setup derives the channel from the running package's version. Unknown prerelease versions are rejected. An explicit local runtime opts out of npm updates.
 
@@ -36,7 +40,7 @@ The installer appends the corresponding `-c mcp_servers.t3poll_<id>.enabled=true
 
 Configuration files receive adjacent private `.t3poll-<id>.bak` backups before changes. The installer compares the files with the reviewed snapshot and refuses stale writes. If credential verification fails after applying, it restores the previous configuration unless another process has edited it. Backups remain for manual recovery. Adjacent `.t3poll-lock` files prevent overlapping installer writes; after a crashed installer, verify it is no longer running before removing a leftover lock. T3 itself does not participate in those locks, so review-time comparisons and rollback checks also protect against its edits.
 
-The installer checks the selected Codex executable, starts the exact configured MCP command, and verifies the tool catalog. It then creates or reuses a managed T3 credential and reads the thread list to verify connectivity. It never calls `watch`, sends a message, or restarts a worker. Runtime checks can create t3poll state files, and failed attempts can leave those and credential metadata for recovery. Dry runs do not run these checks or write state.
+The installer checks the selected Codex executable, starts the exact configured MCP command, and verifies the tool catalog. It then creates or reuses a managed T3 credential and reads the thread list to verify connectivity. It never calls `watch` or deliberately sends a test message. Starting the MCP runtime can resume saved active watches in the selected state directory; those watches may deliver notifications. Runtime checks can create t3poll state files, and failed attempts can leave those and credential metadata for recovery. Dry runs do not run these checks or write state.
 
 Open a fresh Codex session in the selected T3 instance after setup. Existing sessions keep their current tool catalog. Scoping controls tool availability, not security isolation; users can deliberately enable the MCP entry elsewhere. Project-level or administratively managed Codex configuration can impose additional overrides outside this installer's control.
 

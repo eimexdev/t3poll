@@ -29,19 +29,18 @@ See the [installer guide](docs/installer.md) and [release process](docs/releases
 Copy this into your coding agent:
 
 ```text
-Set up t3poll from https://github.com/eimexdev/t3poll.
-Use an existing checkout if available; otherwise choose an appropriate local installation folder.
-Read docs/agent-setup.md in that checkout and follow it.
-Configure MCP to launch t3poll; it discovers local T3 and manages its credential.
-Preserve my running T3 server and ongoing conversations.
-Verify setup without sending a message to a thread or starting a watch.
+Set up t3poll for Codex sessions inside my running T3 Code instance.
+Read https://github.com/eimexdev/t3poll/blob/master/docs/agent-setup.md and follow it.
+Use the published npm setup installer, preview the changes, then apply them.
+Preserve my running T3 server, conversations, and unrelated configuration.
+Verify the installation without creating a watch or sending a test message.
 ```
 
 The [agent setup guide](docs/agent-setup.md) covers discovery, credentials, configuration, and verification. Once installed, ask the agent to watch a PR and choose its destination conversation.
 
 ## Manual setup
 
-You need Windows x64, macOS, or Linux, Node.js 24.10+, GitHub CLI signed in, and a compatible T3 server. Build this checkout and add one MCP configuration entry. The first thread-listing or watch call finds local T3 and creates its credential. Follow the [manual steps](docs/setup.md).
+You need Windows x64, macOS, or Linux, Node.js 24.10+, GitHub CLI signed in, and a compatible T3 server. Use the setup installer for standard installations. For deliberate manual configuration or a development checkout, follow the [manual steps](docs/setup.md) and preserve T3-only scope.
 
 No URL or token settings are needed for a standard local installation. If multiple instances are found, select one with `T3POLL_BASE_DIR`. Choose the destination thread when registering each watch.
 

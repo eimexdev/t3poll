@@ -1,6 +1,6 @@
 # Manual setup
 
-Requires Windows x64, macOS, or Linux, Node.js 24.10+, [GitHub CLI](https://cli.github.com/) signed in, and a running local T3 installation. Nothing is published to npm yet.
+Requires Windows x64, macOS, or Linux, Node.js 24.10+, [GitHub CLI](https://cli.github.com/) signed in, and a running local T3 installation. For normal installation, use `npx t3poll@latest setup` or follow [agent setup](agent-setup.md). The instructions below are for deliberate manual configuration and development checkouts.
 
 ## Install
 
@@ -21,9 +21,12 @@ Add this entry to the Codex configuration used by T3's provider:
 
 ```toml
 [mcp_servers.t3poll]
+enabled = false
 command = "node"
 args = ["/absolute/path/to/t3poll/dist/cli.js", "mcp"]
 ```
+
+Enable this entry only in the selected T3 Codex provider by appending `-c mcp_servers.t3poll.enabled=true` to its launch arguments, preserving existing arguments. Bind the selected T3 home through `T3POLL_BASE_DIR` when needed. The installer handles this scoping and checks launch-environment conflicts automatically; prefer it to manual editing.
 
 Use an absolute Node path if the provider's PATH differs from your terminal. This is common with macOS desktop apps and Node version managers. `node -p process.execPath` prints the runtime path. GitHub CLI must also be on the MCP process's PATH. For Homebrew on Apple Silicon, an example is:
 
@@ -36,6 +39,7 @@ On Windows, use an absolute `node.exe` path and forward slashes in TOML paths, f
 
 ```toml
 [mcp_servers.t3poll]
+enabled = false
 command = "C:/Program Files/nodejs/node.exe"
 args = ["C:/Users/you/code/t3poll/dist/cli.js", "mcp"]
 ```

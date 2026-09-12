@@ -38,7 +38,7 @@ The store retains the current snapshot and latest delivery, not a full record of
 ## Proposed follow-up
 
 1. Notify promptly about new feedback and newly failing checks.
-2. Aggregate successful checks into a useful completion notification instead of waking the agent for every platform. Define which checks constitute completion and how reruns affect it.
+2. Aggregate successful checks into a useful completion notification instead of waking the agent for every platform. See [CI notification milestones](ci-notifications.md) for the proposed policy, unresolved completion rules, and acceptance cases.
 3. Preserve review-completion notifications, including reviews with no findings, while suppressing routine running-status edits. Distinguish meaningful edited feedback from bot summary churn.
 4. Include a short, controlled reason such as "New review finding" or "All CI checks passed". Avoid copying arbitrary comment bodies into wakeups.
 5. Consider short batching windows and deduplication for related review comments, review submissions, summary edits, and repeated check outcomes.

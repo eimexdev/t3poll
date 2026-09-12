@@ -17,4 +17,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check
-      - run: npm pack --dry-run
+      - name: Verify packed installation
+        shell: bash
+        run: |
+          npm pack
+          npm run verify:package -- "t3poll-$(node -p 'require("./package.json").version').tgz"

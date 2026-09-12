@@ -6,7 +6,15 @@ Three MCP tools: `watch`, `list`, and `stop`. `watch` automatically starts a bac
 
 ## Setup wizard
 
-With T3 running, build this checkout and run the installer:
+The first releases are available on the nightly channel. With T3 running:
+
+```sh
+npx t3poll@nightly setup
+```
+
+The wizard discovers T3, configures Codex with T3-only tools, preserves existing launch arguments, backs up changed files, and verifies the connection. Add `--dry-run` to preview. Nightlies are for testing; automatic worker handoff is not implemented yet. A stable release will follow upgrade testing.
+
+For development from a checkout:
 
 ```sh
 npm ci
@@ -14,7 +22,7 @@ npm run build
 node dist/cli.js setup --runtime-path ./dist/cli.js
 ```
 
-It discovers T3, configures Codex with T3-only tools, preserves existing launch arguments, backs up changed files, and verifies the connection. Add `--dry-run` to preview. The local runtime option works before npm publication; after release, use `npx t3poll@latest setup` or `npx t3poll@nightly setup`. See the [installer guide](docs/installer.md).
+See the [installer guide](docs/installer.md) and [release process](docs/releases.md).
 
 ## Agent setup
 
@@ -55,7 +63,9 @@ See [monitoring behavior](docs/behavior.md) for notification examples, polling o
 
 ## Updates
 
-There is no automatic updater. Let active watches finish before updating, then run from the checkout:
+npm installations resolve their selected release channel when MCP starts. Active workers keep their loaded code; automatic worker handoff is not implemented. Let active watches finish before restarting MCP to update.
+
+For local checkout installations, update with:
 
 ```sh
 git pull --ff-only

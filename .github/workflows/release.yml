@@ -1,0 +1,126 @@
+name: Release
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [nightly, latest]
+        default: nightly
+        required: true
+      version:
+        description: Stable version (latest only; defaults to the nightly source's base version)
+        type: string
+        required: false
+
+# One publisher at a time, including manual stable releases. Never cancel a publish.
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    if: github.ref == 'refs/heads/master' && vars.NPM_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.release.outputs.ref }}
+      version: ${{ steps.release.outputs.version }}
+      channel: ${{ steps.release.outputs.channel }}
+      skip: ${{ steps.release.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: release
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel || 'nightly' }}
+          STABLE_VERSION: ${{ inputs.version }}
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: node scripts/release.mjs resolve
+
+  test:
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Stamp package with version and source commit
+        env:
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_REF: ${{ needs.resolve.outputs.ref }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+        shell: bash
+        run: node scripts/release.mjs stamp "$RELEASE_VERSION" "$RELEASE_REF" "$RELEASE_CHANNEL"
+      - run: npm test
+      - run: npm run check
+      - name: Pack and verify installation
+        env:
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+        shell: bash
+        run: |
+          npm pack
+          npm run verify:package -- "t3poll-$RELEASE_VERSION.tgz"
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: npm-package
+          path: t3poll-*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [resolve, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: release
+      - name: Publish the tested tarball using npm trusted publishing
+        env:
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+        run: npm publish "release/t3poll-$RELEASE_VERSION.tgz" --access public --tag "$RELEASE_CHANNEL" --provenance
+      - name: Record the release and source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          RELEASE_REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          if [ "$RELEASE_CHANNEL" = nightly ]; then
+            gh release create "v$RELEASE_VERSION" "release/t3poll-$RELEASE_VERSION.tgz" --target "$RELEASE_REF" --title "t3poll $RELEASE_VERSION" --notes "Nightly npm release from $RELEASE_REF. Running workers retain their loaded code; automatic worker handoff is not yet implemented." --prerelease --latest=false
+          else
+            gh release create "v$RELEASE_VERSION" "release/t3poll-$RELEASE_VERSION.tgz" --target "$RELEASE_REF" --title "t3poll $RELEASE_VERSION" --generate-notes --latest
+          fi

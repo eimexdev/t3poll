@@ -1,6 +1,6 @@
 # npm distribution and MCP launch
 
-Status: planned after setup and platform verification. Follow the [setup and release work order](setup-and-release.md), including native Windows support and testing. Nothing has been published by this plan.
+Status: release infrastructure implemented after installer and platform verification. See [release operations](../docs/releases.md) for nightly publication, trusted publishing, and stable promotion. Worker handoff remains separate work.
 
 ## Intended experience
 

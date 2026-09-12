@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { configFromEnv } from "./config.js";
 import { Service } from "./service.js";
@@ -34,8 +35,17 @@ async function main(): Promise<void> {
       interval: { type: "string" },
       threads: { type: "boolean" },
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "v" },
     },
   });
+  if (values.version) {
+    console.log(
+      JSON.parse(
+        readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+      ).version,
+    );
+    return;
+  }
   const [command, argument] = positionals;
   if (!command || values.help) {
     process.stdout.write(help);

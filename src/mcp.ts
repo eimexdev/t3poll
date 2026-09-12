@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -5,7 +6,12 @@ import { watchInput } from "./model.js";
 import type { Service } from "./service.js";
 
 export function createMcp(service: Service): McpServer {
-  const server = new McpServer({ name: "t3poll", version: "0.1.0" });
+  const server = new McpServer({
+    name: "t3poll",
+    version: JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ).version,
+  });
   const call = async (operation: () => unknown | Promise<unknown>) => {
     try {
       const result = await operation();

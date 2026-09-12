@@ -25,7 +25,8 @@
     "check": "tsc --noEmit",
     "test": "npm run build && node --import tsx --test tests/*.test.ts",
     "format": "prettier --write src tests scripts README.md docs package.json tsconfig.json",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "verify:package": "node scripts/verify-package.mjs"
   },
   "dependencies": {
     "@clack/prompts": "1.8.0",
@@ -40,5 +41,9 @@
     "prettier": "3.9.6",
     "tsx": "4.23.13",
     "typescript": "7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "nightly"
   }
 }

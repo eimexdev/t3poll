@@ -8,13 +8,13 @@ npm run build
 node dist/cli.js setup --runtime-path ./dist/cli.js
 ```
 
-`--runtime-path` uses this checkout's built CLI. Keep the checkout in place. To install the published nightly without a checkout, use:
+`--runtime-path` uses this checkout's built CLI. Keep the checkout in place. To install the published package without a checkout, use:
 
 ```sh
-npx t3poll@nightly setup
+npx t3poll@latest setup
 ```
 
-The first releases are nightly-only. Stable publication will follow worker upgrade testing. There is no release-channel question. A stable package configures `latest`; a package whose version contains the nightly prerelease identifier configures `nightly`. npm does not pass its original tag to the program, so setup derives the channel from the running package's version. Unknown prerelease versions are rejected. An explicit local runtime opts out of npm updates.
+Use `@nightly` instead to follow automatic nightly releases. There is no release-channel question. A stable package configures `latest`; a package whose version contains the nightly prerelease identifier configures `nightly`. npm does not pass its original tag to the program, so setup derives the channel from the running package's version. Unknown prerelease versions are rejected. An explicit local runtime opts out of npm updates.
 
 ## Flow
 

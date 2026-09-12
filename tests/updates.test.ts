@@ -17,6 +17,7 @@ import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { protectFile } from "../src/private-files.js";
 import { Store } from "../src/store.js";
 import { newer } from "../src/runtime.js";
 import type { Watch, Command } from "../src/model.js";
@@ -114,6 +115,7 @@ for (const ambiguous of [false, true])
       assert.ok(address && typeof address !== "string");
       const tokenFile = join(home, "token");
       writeFileSync(tokenFile, "test-token", { mode: 0o600 });
+      protectFile(tokenFile);
       const store = new Store(env.T3POLL_HOME);
       const now = Date.now();
       const watch: Watch = {
@@ -225,7 +227,12 @@ for (const ambiguous of [false, true])
         store.close();
         server.closeAllConnections();
         await new Promise<void>((r) => server.close(() => r()));
-        rmSync(home, { recursive: true, force: true });
+        rmSync(home, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 100,
+        });
       }
     },
   );

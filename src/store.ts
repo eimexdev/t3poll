@@ -97,16 +97,23 @@ export class Store {
     }
   }
   lease(owner: string, pid: number, now: number, version?: string): boolean {
-    const result = this.db
-      .prepare(
-        `INSERT INTO worker VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,pid=excluded.pid,expires=excluded.expires WHERE worker.expires < ? OR worker.owner=?`,
-      )
-      .run(owner, pid, now + 60_000, now, owner);
-    if (Number(result.changes) > 0 && version)
-      this.db
-        .prepare("INSERT OR REPLACE INTO worker_runtime VALUES(?,?)")
-        .run(owner, version);
-    return Number(result.changes) > 0;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.db
+        .prepare(
+          `INSERT INTO worker VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,pid=excluded.pid,expires=excluded.expires WHERE worker.expires < ? OR worker.owner=?`,
+        )
+        .run(owner, pid, now + 60_000, now, owner);
+      if (Number(result.changes) > 0 && version)
+        this.db
+          .prepare("INSERT OR REPLACE INTO worker_runtime VALUES(?,?)")
+          .run(owner, version);
+      this.db.exec("COMMIT");
+      return Number(result.changes) > 0;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
   owns(owner: string): boolean {
     return (

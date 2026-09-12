@@ -179,7 +179,12 @@ process.stdout.write(JSON.stringify(result));
       await until(() => !store.worker()).catch(() => {});
       store.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      rmSync(home, { recursive: true, force: true });
+      rmSync(home, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      });
     }
   },
 );

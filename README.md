@@ -6,13 +6,13 @@ Three MCP tools: `watch`, `list`, and `stop`. `watch` automatically starts a bac
 
 ## Setup wizard
 
-The first releases are available on the nightly channel. With T3 running:
+With T3 running:
 
 ```sh
-npx t3poll@nightly setup
+npx t3poll@latest setup
 ```
 
-The wizard discovers T3, configures Codex with T3-only tools, preserves existing launch arguments, backs up changed files, and verifies the connection. Add `--dry-run` to preview. Nightlies receive automatic releases; stable releases are promoted manually.
+The wizard discovers T3, configures Codex with T3-only tools, preserves existing launch arguments, backs up changed files, and verifies the connection. Add `--dry-run` to preview. Use `npx t3poll@nightly setup` to follow automatic nightly releases. Stable releases are promoted manually.
 
 For development from a checkout:
 

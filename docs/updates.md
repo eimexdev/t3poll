@@ -1,6 +1,6 @@
 # Updates
 
-Setup follows the invoked package's channel. New Codex sessions run npm with `--prefer-online` to resolve `latest` or `nightly`. Publishing alone does not change a running session. To load a channel now and hand over active watches, run:
+Setup follows the invoked package's channel. New Codex sessions use npm's normal cache behavior to resolve `latest` or `nightly`, without forcing a freshness check at every startup. Publishing alone does not change a running session. To explicitly check for a newer package and hand over active watches, run:
 
 ```sh
 npx --yes --prefer-online t3poll@nightly list

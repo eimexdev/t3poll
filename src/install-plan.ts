@@ -1,4 +1,9 @@
-import { disableGlobalEntry, expandInlineServers } from "./codex-config.js";
+import { parseTOML } from "toml-eslint-parser";
+import {
+  disableGlobalEntry,
+  expandInlineServers,
+  recoverManagedEntry,
+} from "./codex-config.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
@@ -303,15 +308,27 @@ export function planInstall(input: {
     !!originalServers.t3poll &&
     object.parse(originalServers.t3poll).enabled !== false;
   const disablesLegacy = legacyGlobalEnabled && input.disableLegacy !== false;
-  const source = expandInlineServers(
+  let source = expandInlineServers(
     disablesLegacy ? disableGlobalEntry(originalSource) : originalSource,
   );
-  const parsed = parse(source);
+
   const start = `# t3poll managed ${server} begin`;
   const end = `# t3poll managed ${server} end`;
-  const startIndex = source.indexOf(start),
-    endIndex = source.indexOf(end);
-  const entries = object.parse(parsed.mcp_servers ?? {});
+  const comments = parseTOML(source).comments;
+  const starts = comments.filter((c) => source.slice(...c.range) === start);
+  const ends = comments.filter((c) => source.slice(...c.range) === end);
+  let startIndex = starts[0]?.range[0] ?? -1,
+    endIndex = ends[0]?.range[0] ?? -1;
+  const damaged =
+    startIndex < 0 !== endIndex < 0 ||
+    (startIndex >= 0 &&
+      (endIndex < startIndex || starts.length > 1 || ends.length > 1));
+  if (damaged) {
+    source = recoverManagedEntry(source, server);
+    startIndex = -1;
+    endIndex = -1;
+  }
+  const entries = object.parse(parse(source).mcp_servers ?? {});
   if (startIndex >= 0 && endIndex > startIndex) {
     if (
       (startIndex > 0 && source[startIndex - 1] !== "\n") ||
@@ -329,16 +346,6 @@ export function planInstall(input: {
       );
   }
 
-  if (
-    startIndex < 0 !== endIndex < 0 ||
-    (startIndex >= 0 &&
-      (endIndex < startIndex ||
-        source.indexOf(start, startIndex + 1) >= 0 ||
-        source.indexOf(end, endIndex + 1) >= 0))
-  )
-    throw new Error(
-      "The t3poll managed config block is damaged. Restore its backup before setup.",
-    );
   if (entries[server] && startIndex < 0)
     throw new Error(
       `Codex already has an unmanaged ${server} entry. Rename or remove it before setup.`,

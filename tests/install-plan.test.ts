@@ -324,3 +324,53 @@ test("declining migration leaves the existing global entry intact", (t) => {
     true,
   );
 });
+
+test("reinstall recovers leftover markers and partially deleted entries", (t) => {
+  const f = fixture(t);
+  const initial = planInstall(f.input);
+  const begin = `# t3poll managed ${initial.server} begin`;
+  const end = `# t3poll managed ${initial.server} end`;
+  const entry = `[mcp_servers.${initial.server}]\ncommand = "old"\n[mcp_servers.${initial.server}.env]\nOLD = "value"\n`;
+  for (const leftovers of [
+    begin,
+    end,
+    `${end}\n${begin}`,
+    `${begin}\n${begin}`,
+    `${begin}\n${entry}`,
+    `${entry}${end}`,
+    `${end}\n${entry}${begin}`,
+  ]) {
+    const source = `${f.original}\n${leftovers}\n[mcp_servers.personal]\ncommand = "keep"\n`;
+    writeFileSync(f.config, source);
+    const plan = planInstall(f.input);
+    const transaction = applyPlan(plan);
+    const after = readFileSync(f.config, "utf8");
+    const servers = parse(after).mcp_servers as any;
+    assert.equal(servers.personal.command, "keep");
+    assert.equal(servers.other.command, "other");
+    assert.equal(servers[plan.server].command, f.input.command);
+    assert.equal(servers[plan.server].env.OLD, undefined);
+    assert.equal(after.split(begin).length, 2);
+    assert.equal(after.split(end).length, 2);
+    assert.ok(planInstall(f.input).edits.every((e) => e.before === e.after));
+    assert.ok(
+      transaction.backups.some((path) => readFileSync(path, "utf8") === source),
+    );
+    transaction.rollback();
+    assert.equal(readFileSync(f.config, "utf8"), source);
+  }
+});
+
+test("marker text inside TOML values does not claim ownership", (t) => {
+  const f = fixture(t);
+  const initial = planInstall(f.input);
+  const source = `description = """\n# t3poll managed ${initial.server} begin\n"""\n${f.original}`;
+  writeFileSync(f.config, source);
+  const plan = planInstall(f.input);
+  applyPlan(plan);
+  assert.equal(
+    parse(readFileSync(f.config, "utf8")).description,
+    parse(source).description,
+  );
+  assert.ok(planInstall(f.input).edits.every((e) => e.before === e.after));
+});

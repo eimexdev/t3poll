@@ -210,12 +210,11 @@ test("stale review and concurrent rollback cannot overwrite another edit", (t) =
   assert.throws(() => transaction.rollback(), /changed during setup/);
   assert.equal(readFileSync(f.settings, "utf8"), '{"newerEdit":true}');
 });
-test("invalid TOML, global legacy registrations and unmanaged collisions are not overwritten", (t) => {
+test("invalid TOML and unmanaged collisions are not overwritten", (t) => {
   const f = fixture(t),
     plan = planInstall(f.input);
   for (const source of [
     "invalid = [",
-    '[mcp_servers.t3poll]\ncommand="old"\n',
     `[mcp_servers.${plan.server}]\ncommand="mine"\n`,
   ]) {
     writeFileSync(f.config, source);
@@ -263,4 +262,65 @@ test("unrelated settings inserted into a managed block cannot be deleted on repa
   writeFileSync(f.config, text);
   assert.throws(() => planInstall(f.input), /unrelated settings/);
   assert.equal(readFileSync(f.config, "utf8"), text);
+});
+
+test("existing global t3poll is disabled automatically with backup and rollback", (t) => {
+  const f = fixture(t);
+  const source = `${f.original}\n[mcp_servers.t3poll]\n# Keep the old runtime for recovery\ncommand = "old-runtime"\nenabled = true # global\nargs = ["mcp"]\n`;
+  writeFileSync(f.config, source);
+  const plan = planInstall(f.input);
+  assert.equal(readFileSync(f.config, "utf8"), source);
+  const change = applyPlan(plan);
+  const after = readFileSync(f.config, "utf8");
+  assert.ok(after.includes("enabled = false # global"));
+  const servers = parse(after).mcp_servers as Record<string, any>;
+  assert.equal(servers.t3poll.enabled, false);
+  assert.equal(servers.t3poll.command, "old-runtime");
+  assert.equal(servers[plan.server].enabled, false);
+  assert.ok(
+    change.backups.some((path) => readFileSync(path, "utf8") === source),
+  );
+  assert.ok(
+    planInstall(f.input).edits.every((edit) => edit.before === edit.after),
+  );
+  change.rollback();
+  assert.equal(readFileSync(f.config, "utf8"), source);
+});
+
+test("global entry migration preserves quoted keys, inline tables and implicit defaults", (t) => {
+  const f = fixture(t);
+  for (const source of [
+    '[mcp_servers."t3poll"] # header\ncommand="old"\n',
+    "mcp_servers = { t3poll = { command = 'old', enabled = true } }\n",
+    "mcp_servers = { t3poll = { command = 'old' } }\n",
+    'mcp_servers.t3poll.command = "old"\n',
+    '[mcp_servers]\nt3poll.command = "old"\n',
+    '[mcp_servers.t3poll.env]\nKEEP="value"\n',
+    '[mcp_servers.t3poll]\r\ncommand="old"\r\nenabled=true # keep\r\n',
+    'description = """\n[mcp_servers.t3poll]\nenabled = true\n"""\n[mcp_servers.t3poll]\ncommand="old"\n',
+  ]) {
+    writeFileSync(f.config, source);
+    const before = parse(source) as any;
+    before.mcp_servers.t3poll.enabled = false;
+    const plan = planInstall(f.input);
+    const after = parse(plan.edits[0]!.after) as any;
+    delete after.mcp_servers[plan.server];
+    assert.deepEqual(after, before, source);
+    assert.equal(readFileSync(f.config, "utf8"), source);
+  }
+});
+
+test("declining migration leaves the existing global entry intact", (t) => {
+  const f = fixture(t);
+  const source = '[mcp_servers.t3poll]\ncommand="old"\nenabled=true\n';
+  writeFileSync(f.config, source);
+  const plan = planInstall({ ...f.input, disableLegacy: false });
+  assert.equal(plan.legacyGlobalEnabled, true);
+  assert.equal(plan.disablesLegacy, false);
+  applyPlan(plan);
+  assert.ok(readFileSync(f.config, "utf8").startsWith(source));
+  assert.equal(
+    (parse(readFileSync(f.config, "utf8")).mcp_servers as any).t3poll.enabled,
+    true,
+  );
 });

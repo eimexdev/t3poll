@@ -212,6 +212,7 @@ export async function runSetup(args: string[]): Promise<void> {
       "state-home": { type: "string" },
       "runtime-path": { type: "string" },
       "dry-run": { type: "boolean" },
+      "keep-global": { type: "boolean" },
       yes: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
@@ -219,7 +220,7 @@ export async function runSetup(args: string[]): Promise<void> {
   if (positionals.length) throw new Error("Unexpected setup arguments.");
   if (values.help) {
     console.log(
-      `t3poll setup [--base-dir <T3 home>] [--provider <id>] [--codex-home <path>]\n             [--state-home <path>] [--dry-run] [--yes]\n             [--runtime-path <built cli.js>]\n\nThe invoked package determines Stable or Nightly. --dry-run writes nothing.\n--runtime-path uses a local build instead of npm channel updates.\n--yes accepts the plan; ambiguous instances still require explicit selection.`,
+      `t3poll setup [--base-dir <T3 home>] [--provider <id>] [--codex-home <path>]\n             [--state-home <path>] [--dry-run] [--yes] [--keep-global]\n             [--runtime-path <built cli.js>]\n\nThe invoked package determines Stable or Nightly. --dry-run writes nothing.\n--runtime-path uses a local build instead of npm channel updates.\n--keep-global preserves an existing enabled global t3poll entry.\n--yes accepts the recommended plan; ambiguous instances still require explicit selection.`,
     );
     return;
   }
@@ -349,6 +350,8 @@ export async function runSetup(args: string[]): Promise<void> {
     let stateHome = expandPath(values["state-home"] ?? configFromEnv().home);
     const launch = runtime(values["runtime-path"]);
     let plan: InstallPlan;
+    let disableLegacy = !values["keep-global"];
+    const globalDecisions = new Map<string, boolean>();
     while (true) {
       const live = liveEnvironment(server);
       plan = planInstall({
@@ -359,15 +362,51 @@ export async function runSetup(args: string[]): Promise<void> {
         ...launch,
         processEnv: live.env,
         processCwd: live.cwd,
+        disableLegacy,
         ...(codexHome ? { codexHome } : {}),
       });
+      if (
+        interactive &&
+        plan.legacyGlobalEnabled &&
+        !values["keep-global"] &&
+        !globalDecisions.has(plan.codexHome)
+      ) {
+        p.note(
+          "t3poll is designed for Codex sessions running inside T3 Code. We recommend keeping the global MCP entry disabled and enabling it through T3 Code's launch arguments, so its tools appear in the sessions where they work as intended.",
+          "Keep t3poll scoped to T3 Code",
+        );
+        disableLegacy = await answer(
+          p.confirm({
+            message:
+              "Disable the existing global t3poll entry? Recommended for T3-only setup.",
+            initialValue: true,
+          }),
+        );
+        globalDecisions.set(plan.codexHome, disableLegacy);
+        continue;
+      }
+      const decision =
+        globalDecisions.get(plan.codexHome) ?? !values["keep-global"];
+      if (decision !== disableLegacy) {
+        disableLegacy = decision;
+        continue;
+      }
       const summary = [
         `T3: ${plan.baseDir}`,
         `Codex: ${plan.provider.label}`,
         `Config: ${plan.codexHome}`,
         `State: ${plan.stateHome}`,
         `Runtime: ${values["runtime-path"] ? "local build" : `t3poll@${plan.channel}`}`,
-        `Scope: this T3 Codex configuration only`,
+        plan.legacyGlobalEnabled && !plan.disablesLegacy
+          ? "Scope: global t3poll remains available outside T3"
+          : "Scope: this T3 Codex configuration only",
+        ...(plan.legacyGlobalEnabled
+          ? [
+              plan.disablesLegacy
+                ? "Disable the existing global t3poll entry"
+                : "Keep the existing global t3poll entry enabled",
+            ]
+          : []),
         `MCP entry: ${plan.server}`,
         ...plan.edits.map(
           (e) => `${e.before === e.after ? "Keep" : "Update"}: ${e.path}`,
@@ -516,6 +555,7 @@ export async function runSetup(args: string[]): Promise<void> {
       ...launch,
       processEnv: latestEnv.env,
       processCwd: latestEnv.cwd,
+      disableLegacy,
       ...(codexHome ? { codexHome } : {}),
     });
     if (JSON.stringify(rechecked) !== JSON.stringify(plan))
@@ -535,6 +575,9 @@ export async function runSetup(args: string[]): Promise<void> {
     }
     for (const backup of transaction.backups) console.log(`Backup: ${backup}`);
     const done =
+      (plan.legacyGlobalEnabled && !plan.disablesLegacy
+        ? "The existing global t3poll entry remains enabled outside T3. "
+        : "") +
       "Setup complete. Open a fresh Codex session in the selected T3 instance to use t3poll. Existing sessions keep their current tools.";
     if (interactive) p.outro(done);
     else console.log(done);

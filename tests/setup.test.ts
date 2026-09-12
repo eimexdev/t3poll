@@ -349,6 +349,17 @@ test("setup CLI previews without side effects, installs a real MCP runtime, and 
   assert.equal(existsSync(codex), false);
   assert.equal(existsSync(f.home), false);
   assert.equal(f.issued(), 0);
+  mkdirSync(codex);
+  const legacy =
+    '[mcp_servers.t3poll]\ncommand="old-runtime"\nenabled=true # preserve this comment\n';
+  writeFileSync(join(codex, "config.toml"), legacy);
+  const keep = await exec(
+    process.execPath,
+    [...args, "--dry-run", "--keep-global"],
+    { env },
+  );
+  assert.match(keep.stdout, /Keep the existing global/);
+  assert.equal(readFileSync(join(codex, "config.toml"), "utf8"), legacy);
   const installed = await exec(process.execPath, [...args, "--yes"], { env });
   assert.match(installed.stdout, /Setup complete/);
   assert.equal(f.issued(), 1);
@@ -357,7 +368,9 @@ test("setup CLI previews without side effects, installs a real MCP runtime, and 
     string,
     { enabled: boolean }
   >;
-  assert.equal(Object.values(servers)[0]!.enabled, false);
+  assert.equal(servers.t3poll!.enabled, false);
+  assert.ok(Object.values(servers).every((server) => server.enabled === false));
+  assert.match(text, /enabled=false # preserve this comment/);
   await exec(process.execPath, [...args, "--yes"], { env });
   assert.equal(f.issued(), 1);
   assert.equal(readFileSync(join(codex, "config.toml"), "utf8"), text);

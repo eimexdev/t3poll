@@ -1,3 +1,4 @@
+import { disableGlobalEntry, expandInlineServers } from "./codex-config.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
@@ -221,6 +222,8 @@ export type InstallPlan = {
   launchArgs: string;
   environmentBlocked: boolean;
   globalEnvironmentScope: boolean;
+  legacyGlobalEnabled: boolean;
+  disablesLegacy: boolean;
   command: string;
   args: string[];
   baseDir: string;
@@ -235,6 +238,7 @@ export function planInstall(input: {
   processEnv?: Record<string, string>;
   processCwd?: string;
   codexHome?: string;
+  disableLegacy?: boolean;
 }): InstallPlan {
   const baseDir = realpathSync(input.baseDir);
   const settingsPath = join(baseDir, "userdata", "settings.json");
@@ -293,7 +297,15 @@ export function planInstall(input: {
   let configPath = join(codexHome, "config.toml");
   if (existsSync(configPath)) configPath = realpathSync(configPath);
   const configBefore = readOptional(configPath);
-  const source = configBefore ?? "";
+  const originalSource = configBefore ?? "";
+  const originalServers = object.parse(parse(originalSource).mcp_servers ?? {});
+  const legacyGlobalEnabled =
+    !!originalServers.t3poll &&
+    object.parse(originalServers.t3poll).enabled !== false;
+  const disablesLegacy = legacyGlobalEnabled && input.disableLegacy !== false;
+  const source = expandInlineServers(
+    disablesLegacy ? disableGlobalEntry(originalSource) : originalSource,
+  );
   const parsed = parse(source);
   const start = `# t3poll managed ${server} begin`;
   const end = `# t3poll managed ${server} end`;
@@ -331,13 +343,6 @@ export function planInstall(input: {
     throw new Error(
       `Codex already has an unmanaged ${server} entry. Rename or remove it before setup.`,
     );
-  // Reject legacy globally enabled t3poll rather than silently leave tools exposed.
-  for (const [name, value] of Object.entries(entries)) {
-    if (name === "t3poll" && object.parse(value).enabled !== false)
-      throw new Error(
-        "The existing global mcp_servers.t3poll entry is enabled. Set enabled = false in Codex config before T3-only setup.",
-      );
-  }
   const channel = releaseChannel(input.version);
   const block = `${start}\n${stringify({ mcp_servers: { [server]: { enabled: false, command: input.command, args: input.args, startup_timeout_sec: 120, env: { T3POLL_BASE_DIR: baseDir, T3POLL_HOME: stateHome, T3POLL_URL: "", T3POLL_TOKEN_FILE: "", T3POLL_THREAD_ID: "" } } } })}${end}\n`;
   const configAfter =
@@ -365,6 +370,8 @@ export function planInstall(input: {
     launchArgs,
     environmentBlocked,
     globalEnvironmentScope,
+    legacyGlobalEnabled,
+    disablesLegacy,
     command: input.command,
     args: input.args,
     baseDir,

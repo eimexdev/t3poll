@@ -2,6 +2,7 @@ import { privateDirectory, protectFile } from "./private-files.js";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Watch } from "./model.js";
+import { newer, type Runtime } from "./runtime.js";
 
 export class Store {
   readonly db: DatabaseSync;
@@ -17,6 +18,8 @@ export class Store {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS watches (id TEXT PRIMARY KEY, watch_key TEXT UNIQUE NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS worker (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, pid INTEGER NOT NULL, expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS runtime_target (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS worker_runtime (owner TEXT PRIMARY KEY, version TEXT NOT NULL);
       PRAGMA user_version=1;
     `);
   }
@@ -67,12 +70,42 @@ export class Store {
       (w) => w.status === "watching" || w.status === "finishing",
     );
   }
-  lease(owner: string, pid: number, now: number): boolean {
+  target(): Runtime | undefined {
+    const row = this.db
+      .prepare("SELECT data FROM runtime_target WHERE id=1")
+      .get();
+    return row ? (JSON.parse(String(row.data)) as Runtime) : undefined;
+  }
+  offer(runtime: Runtime): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const previous = this.target();
+      if (
+        !previous ||
+        runtime.version === previous.version ||
+        newer(runtime.version, previous.version)
+      )
+        this.db
+          .prepare(
+            "INSERT INTO runtime_target VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+          )
+          .run(JSON.stringify(runtime));
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  lease(owner: string, pid: number, now: number, version?: string): boolean {
     const result = this.db
       .prepare(
         `INSERT INTO worker VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,pid=excluded.pid,expires=excluded.expires WHERE worker.expires < ? OR worker.owner=?`,
       )
       .run(owner, pid, now + 60_000, now, owner);
+    if (Number(result.changes) > 0 && version)
+      this.db
+        .prepare("INSERT OR REPLACE INTO worker_runtime VALUES(?,?)")
+        .run(owner, version);
     return Number(result.changes) > 0;
   }
   owns(owner: string): boolean {
@@ -81,16 +114,23 @@ export class Store {
       owner
     );
   }
-  worker(): { pid: number; expires: number } | undefined {
+  worker(): { pid: number; expires: number; version?: string } | undefined {
     const row = this.db
-      .prepare("SELECT pid,expires FROM worker WHERE id=1")
+      .prepare(
+        "SELECT pid,expires,version FROM worker LEFT JOIN worker_runtime USING(owner) WHERE id=1",
+      )
       .get();
     return row
-      ? { pid: Number(row.pid), expires: Number(row.expires) }
+      ? {
+          pid: Number(row.pid),
+          expires: Number(row.expires),
+          ...(row.version ? { version: String(row.version) } : {}),
+        }
       : undefined;
   }
   release(owner: string): void {
     this.db.prepare("DELETE FROM worker WHERE owner=?").run(owner);
+    this.db.prepare("DELETE FROM worker_runtime WHERE owner=?").run(owner);
   }
   retire(owner: string): boolean {
     return (

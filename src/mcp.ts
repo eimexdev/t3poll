@@ -85,6 +85,29 @@ export function createMcp(service: Service): McpServer {
 export async function serveMcp(service: Service): Promise<void> {
   const server = createMcp(service);
   const transport = new StdioServerTransport();
-  server.server.onclose = () => service.close();
+  // Resume persisted watches on connection, and retry a failed worker without
+  // holding MCP initialization open or replacing the session's loaded code.
+  let checking = false;
+  let closed = false;
+  const check = async () => {
+    if (checking || closed) return;
+    checking = true;
+    try {
+      await service.list();
+    } finally {
+      checking = false;
+      if (closed) service.close();
+    }
+  };
+  const timer = setInterval(() => {
+    void check().catch(() => {});
+  }, 30_000);
+  timer.unref();
+  server.server.onclose = () => {
+    closed = true;
+    clearInterval(timer);
+    if (!checking) service.close();
+  };
   await server.connect(transport);
+  void check().catch(() => {});
 }

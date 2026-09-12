@@ -22,6 +22,17 @@ export function stableVersion(value, previous) {
   }
   return value;
 }
+export function nightlyBase(base, latest) {
+  if (!latest || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(latest))
+    return base;
+  try {
+    stableVersion(base, latest);
+    return base;
+  } catch {
+    const [major, minor, patch] = latest.split(".");
+    return `${major}.${minor}.${BigInt(patch) + 1n}`;
+  }
+}
 export function nightlyCommit(metadata) {
   const commit = metadata?.t3pollRelease?.commit;
   if (
@@ -84,10 +95,12 @@ async function main() {
   ).version;
   const version =
     channel === "nightly"
-      ? nightlyVersion(base)
+      ? nightlyVersion(nightlyBase(base, metadata["dist-tags"].latest))
       : stableVersion(
-          process.env.STABLE_VERSION || base,
-          metadata["dist-tags"].latest,
+          process.env.STABLE_VERSION || nightly.version.split("-")[0],
+          /^\d+\.\d+\.\d+$/.test(metadata["dist-tags"].latest ?? "")
+            ? metadata["dist-tags"].latest
+            : undefined,
         );
   const skip =
     channel === "nightly" &&

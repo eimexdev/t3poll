@@ -54,4 +54,4 @@ T3 builds must contain support for `T3CODE_CODEX_LAUNCH_ARGS` in their server bu
 
 The npm launch command uses Node to run npm's CLI directly, including on Windows, avoiding batch-file quoting. It resolves the package channel at MCP startup and needs npm/network access. Verification must succeed before config is changed; there is no cached-version fallback during a failed install.
 
-Running MCP processes and detached workers keep their loaded code. Automatic worker handoff is a separate planned change; this installer does not implement hot updates. Before upgrading a runtime with active watches, follow the existing update guidance in the README.
+New MCP sessions resolve their npm channel and hand active watches to a newer worker after its current operation finishes. Existing MCP sessions keep their loaded code. See [update behavior](updates.md) for compatibility and recovery.

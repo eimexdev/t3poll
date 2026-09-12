@@ -1,6 +1,6 @@
 {
   "name": "t3poll",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Watch GitHub PRs and wake an existing T3 Code thread, through MCP or the CLI.",
   "type": "module",
   "license": "MIT",

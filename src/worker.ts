@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { openSync, closeSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { runtime, newer } from "./runtime.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { Store } from "./store.js";
 import { readGithub } from "./github.js";
@@ -160,9 +160,23 @@ export async function tick(
 export async function runWorker(home: string): Promise<void> {
   const store = new Store(home);
   const owner = randomUUID();
-  if (!store.lease(owner, process.pid, Date.now())) {
-    store.close();
-    return;
+  // Only a successfully loaded candidate advertises itself. A broken installation
+  // cannot ask the healthy worker to retire.
+  store.offer(runtime);
+  const deadline = Date.now() + 90_000;
+  while (!store.lease(owner, process.pid, Date.now(), runtime.version)) {
+    const current = store.worker();
+    if (current && !alive(current.pid)) store.clearDeadWorker(current.pid);
+    if (
+      Date.now() >= deadline ||
+      !store.work().length ||
+      newer(store.target()!.version, runtime.version) ||
+      (current?.version && !newer(runtime.version, current.version))
+    ) {
+      store.close();
+      return;
+    }
+    await delay(100);
   }
   let stopping = false;
   const stop = () => {
@@ -171,10 +185,12 @@ export async function runWorker(home: string): Promise<void> {
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
   const heartbeat = setInterval(() => {
-    if (!store.lease(owner, process.pid, Date.now())) stopping = true;
+    if (!store.lease(owner, process.pid, Date.now(), runtime.version))
+      stopping = true;
   }, 5_000);
   try {
     while (!stopping && store.owns(owner)) {
+      if (newer(store.target()!.version, runtime.version)) break;
       const work = store.work();
       if (!work.length && store.retire(owner)) break;
       for (const watch of work) {
@@ -185,6 +201,7 @@ export async function runWorker(home: string): Promise<void> {
           dependencies,
           () => !stopping && store.owns(owner),
         );
+        if (newer(store.target()!.version, runtime.version)) break;
       }
       if (!stopping) await delay(1000);
     }
@@ -206,40 +223,55 @@ function alive(pid: number): boolean {
   }
 }
 
-export async function ensureWorker(
-  store: Store,
-): Promise<{ pid: number | null }> {
+export async function ensureWorker(store: Store): Promise<{
+  pid: number | null;
+  version?: string;
+  updating?: boolean;
+}> {
   if (!store.work().length) return { pid: null };
   const previous = store.worker();
-  if (previous && alive(previous.pid) && previous.expires > Date.now())
-    return { pid: previous.pid };
+  const target = store.target();
+  const selected =
+    target && newer(target.version, runtime.version) ? target : runtime;
+  if (previous && alive(previous.pid) && previous.expires > Date.now()) {
+    if (previous.version && !newer(selected.version, previous.version))
+      return { pid: previous.pid, version: previous.version };
+  }
   if (previous && !alive(previous.pid)) store.clearDeadWorker(previous.pid);
   const log = openSync(join(store.home, "worker.log"), "a", 0o600);
-  const child = spawn(
-    process.execPath,
-    [fileURLToPath(new URL("./cli.js", import.meta.url)), "_worker"],
-    {
-      detached: true,
-      windowsHide: true,
-      stdio: ["ignore", log, log],
-      cwd: store.home,
-      env: { ...process.env, T3POLL_HOME: store.home },
-    },
-  );
+  const child = spawn(selected.node, [selected.cli, "_worker"], {
+    detached: true,
+    windowsHide: true,
+    stdio: ["ignore", log, log],
+    cwd: store.home,
+    env: { ...process.env, T3POLL_HOME: store.home },
+  });
   closeSync(log);
   let spawnError = false;
+  let exited = false;
+  child.on("exit", () => {
+    exited = true;
+  });
   child.on("error", () => {
     spawnError = true;
   });
   child.unref();
   for (let i = 0; i < 80; i++) {
-    if (spawnError) break;
     const worker = store.worker();
-    if (worker && worker.expires > Date.now() && alive(worker.pid))
-      return { pid: worker.pid };
+    if (
+      worker &&
+      worker.expires > Date.now() &&
+      alive(worker.pid) &&
+      worker.version &&
+      !newer(selected.version, worker.version)
+    )
+      return { pid: worker.pid, version: worker.version };
     if (!store.work().length) return { pid: null };
+    if (spawnError || exited) break;
     await delay(100);
   }
+  if (!spawnError && !exited && previous && alive(previous.pid))
+    return { pid: previous.pid, version: previous.version, updating: true };
   throw new Error(
     "Watch saved, but worker startup failed. Run t3poll list to retry startup; inspect worker.log in T3POLL_HOME.",
   );

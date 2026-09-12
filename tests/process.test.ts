@@ -1,7 +1,8 @@
+import { rm } from "node:fs/promises";
 import { executable } from "./fixtures/executable.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, delimiter } from "node:path";
 import { createServer } from "node:http";
@@ -179,7 +180,12 @@ process.stdout.write(JSON.stringify(result));
       await until(() => !store.worker()).catch(() => {});
       store.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      rmSync(home, { recursive: true, force: true });
+      await rm(home, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      });
     }
   },
 );

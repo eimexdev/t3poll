@@ -1,6 +1,6 @@
 # Setup and release work order
 
-Status: Windows x64 support is implemented and tested on Gideon; see [verification](../docs/compatibility.md#windows-verification). The setup installer is implemented; see [installer usage](../docs/installer.md). The npm release workflow is implemented; see [release operations](../docs/releases.md). Automatic update handoff remains planned.
+Status: Windows x64 support is implemented and tested on Gideon; see [verification](../docs/compatibility.md#windows-verification). The setup installer is implemented; see [installer usage](../docs/installer.md). The npm release workflow is implemented; see [release operations](../docs/releases.md). Worker update handoff is implemented; see [update behavior](../docs/updates.md).
 
 ## Order of work
 

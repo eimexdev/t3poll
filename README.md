@@ -6,13 +6,13 @@ Three MCP tools: `watch`, `list`, and `stop`. `watch` automatically starts a bac
 
 ## Setup wizard
 
-The first releases are available on the nightly channel. With T3 running:
+With T3 running:
 
 ```sh
-npx t3poll@nightly setup
+npx t3poll@latest setup
 ```
 
-The wizard discovers T3, configures Codex with T3-only tools, preserves existing launch arguments, backs up changed files, and verifies the connection. Add `--dry-run` to preview. Nightlies are for testing; automatic worker handoff is not implemented yet. A stable release will follow upgrade testing.
+The wizard discovers T3, configures Codex with T3-only tools, preserves existing launch arguments, backs up changed files, and verifies the connection. Add `--dry-run` to preview. Use `npx t3poll@nightly setup` to follow automatic nightly releases. Stable releases are promoted manually.
 
 For development from a checkout:
 
@@ -63,19 +63,13 @@ See [monitoring behavior](docs/behavior.md) for notification examples, polling o
 
 ## Updates
 
-npm installations resolve their selected release channel when MCP starts. Active workers keep their loaded code; automatic worker handoff is not implemented. Let active watches finish before restarting MCP to update.
+npm installations resolve their selected release channel when a new Codex session starts. A newer runtime takes over the shared worker after its current operation finishes. Watches keep their IDs, expiration, baseline, queued changes, and pending delivery IDs. Older sessions keep using the newer worker.
 
-For local checkout installations, update with:
+To trigger an update immediately, run `npx --yes --prefer-online t3poll@nightly list`, or use `@latest` for stable. This updates the worker; existing MCP sessions keep their loaded code until reconnected. MCP startup resumes saved watches and checks worker health every 30 seconds. There is no background registry polling.
 
-```sh
-git pull --ff-only
-npm ci
-npm run build
-```
+Local rebuilds with an unchanged version require waiting for the worker to exit.
 
-Reconnect the t3poll MCP server or use a new provider session to load the new code. The saved MCP entry still points to the same file. A running MCP process or worker keeps its old code until it exits; rebuilding alone does not upgrade it.
-
-If you need to update sooner, record your watch destinations, stop those watches, wait for the worker to exit, then update and register them again. Re-registering starts a fresh baseline, so changes during the gap will not generate notifications. State lives outside the checkout in `~/.local/share/t3poll` by default.
+See [update behavior](docs/updates.md) for failure recovery, channel switching, and compatibility. State lives outside the package in `~/.local/share/t3poll` by default.
 
 Automatically created credentials last 30 days. t3poll replaces them on use during their last day or after expiration, including from the background worker. Explicitly supplied token files remain your responsibility.
 

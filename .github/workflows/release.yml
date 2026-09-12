@@ -120,7 +120,7 @@ jobs:
           RELEASE_REF: ${{ needs.resolve.outputs.ref }}
         run: |
           if [ "$RELEASE_CHANNEL" = nightly ]; then
-            gh release create "v$RELEASE_VERSION" "release/t3poll-$RELEASE_VERSION.tgz" --target "$RELEASE_REF" --title "t3poll $RELEASE_VERSION" --notes "Nightly npm release from $RELEASE_REF. Running workers retain their loaded code; automatic worker handoff is not yet implemented." --prerelease --latest=false
+            gh release create "v$RELEASE_VERSION" "release/t3poll-$RELEASE_VERSION.tgz" --target "$RELEASE_REF" --title "t3poll $RELEASE_VERSION" --notes "Nightly npm release from $RELEASE_REF. Newer runtimes support graceful worker handoff with persisted watches." --prerelease --latest=false
           else
             gh release create "v$RELEASE_VERSION" "release/t3poll-$RELEASE_VERSION.tgz" --target "$RELEASE_REF" --title "t3poll $RELEASE_VERSION" --generate-notes --latest
           fi

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   nightlyVersion,
+  nightlyBase,
   stableVersion,
   nightlyCommit,
 } from "../scripts/release.mjs";
@@ -33,4 +34,12 @@ test("stable promotion requires published nightly source metadata", () => {
     },
   ])
     assert.throws(() => nightlyCommit(metadata));
+});
+
+test("nightlies advance past stable promotions without a manual base bump", () => {
+  assert.equal(nightlyBase("0.1.1", undefined), "0.1.1");
+  assert.equal(nightlyBase("0.1.1", "0.1.1"), "0.1.2");
+  assert.equal(nightlyBase("0.1.1", "0.2.0"), "0.2.1");
+  assert.equal(nightlyBase("0.3.0", "0.2.0"), "0.3.0");
+  assert.equal(nightlyBase("0.1.1", "0.1.0-nightly.1"), "0.1.1");
 });

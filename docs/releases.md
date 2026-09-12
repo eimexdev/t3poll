@@ -30,15 +30,15 @@ All channels share one release concurrency group, and running releases are never
 
 ## Manual stable releases
 
-Complete worker update/handoff testing before the first stable release. Until then, install with `npx t3poll@nightly setup`.
+Promote stable only after the nightly passes worker handoff and package installation checks.
 
 ```sh
 gh workflow run release.yml --ref master -f channel=latest -f version=0.1.0
 ```
 
-The workflow resolves the source commit recorded in the published nightly package, verifies that commit belongs to master, builds a stable version from it, and repeats the platform and package checks. It does not move the nightly prerelease itself to `latest`: the stable package version is needed so setup inherits the stable channel. The requested stable version must advance the current `latest` version. Omit `version` to use that commit's package.json base version.
+The workflow resolves the source commit recorded in the published nightly package, verifies that commit belongs to master, builds a stable version from it, and repeats the platform and package checks. It does not move the nightly prerelease itself to `latest`: the stable package version is needed so setup inherits the stable channel. The requested stable version must advance the current `latest` version. Omit `version` to use the published nightly's base version.
 
-If a future stable line needs a new base version for nightlies, update package.json and package-lock.json together on master.
+After a stable promotion, nightlies automatically use the next patch base unless package.json already specifies a later version. This keeps future nightlies newer than the promoted stable worker. Update package.json and package-lock.json together to start a new minor or major line.
 
 ## First publication
 
@@ -50,6 +50,6 @@ Keep the main checkout's version at its stable base. Release stamping changes on
 
 A published npm version is immutable. If publication succeeds but the GitHub release step fails, the npm package remains available; create its GitHub release from the recorded source commit and retained artifact rather than republishing that version. Check the npm registry before retrying a publication after a network timeout.
 
-The installer resolves the npm channel when its MCP process starts. Running MCP processes and workers keep their loaded code. Automatic worker handoff is separate work; publishing a newer package does not upgrade an already running worker. The installer checks the package online at startup and has no explicit failed-download fallback.
+The installer resolves the npm channel when its MCP process starts. New runtimes hand off active workers while preserving watch state. Existing MCP sessions keep their loaded code. See [update behavior](updates.md). Failed downloads leave an already running worker alone; there is no explicit failed-download fallback for starting a new MCP session.
 
 References: [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/), [npm trust CLI](https://docs.npmjs.com/cli/v11/commands/npm-trust/), [distribution tags](https://docs.npmjs.com/adding-dist-tags-to-packages/).

@@ -1,6 +1,6 @@
 # npm distribution and MCP launch
 
-Status: release infrastructure implemented after installer and platform verification. See [release operations](../docs/releases.md) for nightly publication, trusted publishing, and stable promotion. Worker handoff remains separate work.
+Status: release infrastructure implemented after installer and platform verification. See [release operations](../docs/releases.md) for nightly publication, trusted publishing, and stable promotion. Worker handoff is implemented; see [update behavior](../docs/updates.md).
 
 ## Intended experience
 
@@ -24,6 +24,6 @@ Initial publication needs an npm account and control of the chosen name. GitHub 
 
 ## Done when
 
-A clean installation exposes the same three MCP tools and automatic setup works without a checkout. Documentation explains startup-time updates and the remaining worker limitation without claiming hot updates.
+A clean installation exposes the same three MCP tools and automatic setup works without a checkout. Documentation explains startup-time updates, graceful worker handoff, and compatibility limits.
 
 References: [npm execution and cache behavior](https://docs.npmjs.com/cli/npm-exec/), [publishing public scoped packages](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/).

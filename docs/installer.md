@@ -8,13 +8,13 @@ npm run build
 node dist/cli.js setup --runtime-path ./dist/cli.js
 ```
 
-`--runtime-path` uses this checkout's built CLI. Keep the checkout in place. To install the published nightly without a checkout, use:
+`--runtime-path` uses this checkout's built CLI. Keep the checkout in place. To install the published package without a checkout, use:
 
 ```sh
-npx t3poll@nightly setup
+npx t3poll@latest setup
 ```
 
-The first releases are nightly-only. Stable publication will follow worker upgrade testing. There is no release-channel question. A stable package configures `latest`; a package whose version contains the nightly prerelease identifier configures `nightly`. npm does not pass its original tag to the program, so setup derives the channel from the running package's version. Unknown prerelease versions are rejected. An explicit local runtime opts out of npm updates.
+Use `@nightly` instead to follow automatic nightly releases. There is no release-channel question. A stable package configures `latest`; a package whose version contains the nightly prerelease identifier configures `nightly`. npm does not pass its original tag to the program, so setup derives the channel from the running package's version. Unknown prerelease versions are rejected. An explicit local runtime opts out of npm updates.
 
 ## Flow
 
@@ -54,4 +54,4 @@ T3 builds must contain support for `T3CODE_CODEX_LAUNCH_ARGS` in their server bu
 
 The npm launch command uses Node to run npm's CLI directly, including on Windows, avoiding batch-file quoting. It resolves the package channel at MCP startup and needs npm/network access. Verification must succeed before config is changed; there is no cached-version fallback during a failed install.
 
-Running MCP processes and detached workers keep their loaded code. Automatic worker handoff is a separate planned change; this installer does not implement hot updates. Before upgrading a runtime with active watches, follow the existing update guidance in the README.
+New MCP sessions resolve their npm channel and hand active watches to a newer worker after its current operation finishes. Existing MCP sessions keep their loaded code. See [update behavior](updates.md) for compatibility and recovery.

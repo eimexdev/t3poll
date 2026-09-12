@@ -66,3 +66,7 @@ npm run check
 ```
 
 See [compatibility and test evidence](docs/compatibility.md) and the [future webhooks decision](docs/webhooks.md).
+
+## License
+
+Licensed under the [MIT License](LICENSE).

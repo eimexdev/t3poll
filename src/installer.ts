@@ -71,7 +71,6 @@ function runtime(local: string | undefined): {
       npmCli(),
       "exec",
       "--yes",
-      "--prefer-online",
       `--package=t3poll@${releaseChannel(pkg.version)}`,
       "--",
       "t3poll",

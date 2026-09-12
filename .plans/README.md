@@ -4,6 +4,7 @@ Handoff from the September 11, 2026 discussion. These are small implementation b
 
 ## Remaining work
 
+- [Update freshness and notification noise](update-freshness-and-notification-noise.md): use normal npm caching at startup; notification filtering and batching remain deferred.
 - [Setup and release work order](setup-and-release.md): Windows validation first, a Codex-in-T3 setup wizard, automatic worker updates, and nightly/stable releases.
 - [T3-only MCP registration](t3-only-mcp.md): keep the tools out of ordinary Codex sessions through configuration.
 - [npm distribution](npm-distribution.md): install and launch without a source checkout. Publication was deferred until real-world testing is satisfactory.

@@ -38,6 +38,7 @@ export type LocalT3 = {
   origin: string;
   node: string;
   cli: string;
+  native?: boolean;
   electron?: boolean;
 };
 const renewalWindow = 24 * 60 * 60 * 1000;
@@ -105,6 +106,17 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
       // process has this home's database open before running its auth CLI.
       if (!hasOpenFile(state.pid, join(baseDir, "userdata/state.sqlite")))
         return;
+    } else if (args[1] === "serve") {
+      // Native npm distributions run `t3 serve`, with no JS entrypoint.
+      // Verify the live executable against its platform package before using
+      // that same executable to issue or revoke credentials.
+      const pkg = JSON.parse(
+        readFileSync(join(dirname(executable), "package.json"), "utf8"),
+      );
+      if (pkg.name !== `@t3code/t3-${process.platform}-${process.arch}`) return;
+      const binary = process.platform === "win32" ? "t3.exe" : "t3";
+      if (executable !== join(dirname(executable), binary)) return;
+      cli = executable;
     } else {
       cli = realpathSync(resolve(cwd, args[1]));
       if (!cli.endsWith(join("dist", "bin.mjs"))) return;
@@ -141,6 +153,7 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
       node: executable,
       cli,
       ...(electron ? { electron: true } : {}),
+      ...(args[1] === "serve" ? { native: true } : {}),
     };
   } catch {
     return;
@@ -237,7 +250,7 @@ async function issue(
     await exec(
       server.node,
       [
-        server.cli,
+        ...(server.native ? [] : [server.cli]),
         "auth",
         "session",
         "revoke",
@@ -260,7 +273,7 @@ async function issue(
     const { stdout } = await exec(
       server.node,
       [
-        server.cli,
+        ...(server.native ? [] : [server.cli]),
         "auth",
         "session",
         "issue",

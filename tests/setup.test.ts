@@ -29,7 +29,7 @@ import { Service } from "../src/service.js";
 const exec = promisify(execFile);
 async function fixture(
   t: { after: (fn: () => Promise<void>) => void },
-  launch: "direct" | "absolute-link" | "relative-link" = "direct",
+  launch: "direct" | "absolute-link" | "relative-link" | "native" = "direct",
 ) {
   const root = mkdtempSync(join(tmpdir(), "t3poll setup café space-"));
   const base = join(root, "t3");
@@ -44,7 +44,7 @@ async function fixture(
   const cli = join(pkg, "dist/bin.mjs");
   copyFileSync(resolve("tests/fixtures/local-t3.mjs"), cli);
   const link = join(root, "t3-bin");
-  if (launch !== "direct") {
+  if (launch !== "direct" && launch !== "native") {
     if (process.platform === "win32") symlinkSync(pkg, link, "junction");
     else symlinkSync(cli, link);
   }
@@ -54,11 +54,34 @@ async function fixture(
     process.platform === "win32" && launch !== "direct"
       ? join(command, "dist", "bin.mjs")
       : command;
-  const child = spawn(process.execPath, [entry, "serve"], {
-    cwd: root,
-    env: { ...process.env, T3CODE_HOME: base },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  let executable = process.execPath;
+  if (launch === "native") {
+    // A copied Node binary gives us a real process with the native `t3 serve`
+    // argv layout, without requiring a T3 download or compiler in CI.
+    executable = join(pkg, process.platform === "win32" ? "t3.exe" : "t3");
+    copyFileSync(process.execPath, executable);
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({
+        name: `@t3code/t3-${process.platform}-${process.arch}`,
+      }),
+    );
+    writeFileSync(join(root, "package.json"), '{"type":"module"}');
+    copyFileSync(cli, join(root, "serve"));
+    writeFileSync(
+      join(root, "auth"),
+      'process.argv.splice(1, 0, "auth");\n' + readFileSync(cli, "utf8"),
+    );
+  }
+  const child = spawn(
+    executable,
+    launch === "native" ? ["serve"] : [entry, "serve"],
+    {
+      cwd: root,
+      env: { ...process.env, T3CODE_HOME: base },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   t.after(async () => {
     if (child.exitCode === null) {
       const stopped = once(child, "exit");
@@ -430,4 +453,48 @@ test("installer restores configs when credential verification fails", async (t) 
       .providers.codex.binaryPath,
     codexBinary,
   );
+});
+
+test("native T3 discovery, issuance, renewal, and failed-verification cleanup", async (t) => {
+  const f = await fixture(t, "native");
+  assert.equal(discover(f.config).origin, f.origin);
+  // The stand-in binary loads the auth fixture from its working directory.
+  const cwd = process.cwd();
+  process.chdir(f.root);
+  try {
+    const c = await connection(f.config);
+    assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+    assert.equal(f.issued(), 1);
+    const path = `${c.tokenFile}.managed.json`;
+    const metadata = JSON.parse(readFileSync(path, "utf8"));
+    metadata.expiresAt = new Date(0).toISOString();
+    writeFileSync(path, JSON.stringify(metadata));
+    writeFileSync(join(f.base, "reject"), "");
+    await assert.rejects(renewManaged(c.tokenFile, c.origin), /preserved/);
+    assert.equal(
+      readFileSync(join(f.base, "revoked"), "utf8").trim().split("\n").length,
+      1,
+    );
+    rmSync(join(f.base, "reject"));
+    await renewManaged(c.tokenFile, c.origin);
+    assert.equal(f.issued(), 3);
+    assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+  } finally {
+    process.chdir(cwd);
+  }
+});
+
+test("native discovery rejects unrelated packages and mismatched homes", async (t) => {
+  const f = await fixture(t, "native");
+  const other = join(f.root, "other");
+  mkdirSync(join(other, "userdata"), { recursive: true });
+  copyFileSync(
+    join(f.base, "userdata/server-runtime.json"),
+    join(other, "userdata/server-runtime.json"),
+  );
+  assert.equal(inspectLocal(other), undefined);
+  assert.ok(inspectLocal(f.base));
+  writeFileSync(join(f.root, "package/package.json"), '{"name":"unrelated"}');
+  assert.equal(inspectLocal(f.base), undefined);
+  assert.equal(f.issued(), 0);
 });

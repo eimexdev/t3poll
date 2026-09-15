@@ -147,9 +147,7 @@ async function checkT3Support(server: LocalT3): Promise<void> {
     );
     supported = stdout.trim() === "true";
   } else
-    supported = readFileSync(server.cli, "utf8").includes(
-      "T3CODE_CODEX_LAUNCH_ARGS",
-    );
+    supported = readFileSync(server.cli).includes("T3CODE_CODEX_LAUNCH_ARGS");
   if (!supported)
     throw new Error(
       "This T3 build could not be verified to support Codex launch arguments. Update T3 before T3-only setup.",

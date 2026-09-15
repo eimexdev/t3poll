@@ -498,3 +498,29 @@ test("native discovery rejects unrelated packages and mismatched homes", async (
   assert.equal(inspectLocal(f.base), undefined);
   assert.equal(f.issued(), 0);
 });
+
+test("native discovery accepts a supported package architecture independently of setup's Node architecture", async (t) => {
+  const f = await fixture(t, "native");
+  const packagePath = join(f.root, "package/package.json");
+  // The stand-in executable stays the same; only the target package identity
+  // changes, reproducing a setup runtime and T3 with different architectures.
+  for (const arch of ["x64", "arm64"]) {
+    writeFileSync(
+      packagePath,
+      JSON.stringify({
+        name: `@t3code/t3-${process.platform}-${arch}`,
+      }),
+    );
+    assert.equal(inspectLocal(f.base)?.native, true, `${arch} package`);
+  }
+  const otherPlatform = process.platform === "darwin" ? "linux" : "darwin";
+  for (const name of [
+    `@t3code/t3-${process.platform}-ia32`,
+    `@t3code/t3-${process.platform}-x64-extra`,
+    `@t3code/t3-${otherPlatform}-arm64`,
+  ]) {
+    writeFileSync(packagePath, JSON.stringify({ name }));
+    assert.equal(inspectLocal(f.base), undefined, name);
+  }
+  assert.equal(f.issued(), 0);
+});

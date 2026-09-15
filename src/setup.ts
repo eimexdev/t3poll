@@ -113,7 +113,13 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
       const pkg = JSON.parse(
         readFileSync(join(dirname(executable), "package.json"), "utf8"),
       );
-      if (pkg.name !== `@t3code/t3-${process.platform}-${process.arch}`) return;
+      // Setup's Node may run under emulation while T3 uses the host CPU.
+      if (
+        !["x64", "arm64"].some(
+          (arch) => pkg.name === `@t3code/t3-${process.platform}-${arch}`,
+        )
+      )
+        return;
       const binary = process.platform === "win32" ? "t3.exe" : "t3";
       if (executable !== join(dirname(executable), binary)) return;
       cli = executable;

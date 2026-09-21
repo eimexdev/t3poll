@@ -29,12 +29,22 @@ import { Service } from "../src/service.js";
 const exec = promisify(execFile);
 async function fixture(
   t: { after: (fn: () => Promise<void>) => void },
-  launch: "direct" | "absolute-link" | "relative-link" | "native" = "direct",
+  launch:
+    | "direct"
+    | "absolute-link"
+    | "relative-link"
+    | "native"
+    | "service" = "direct",
 ) {
   const root = mkdtempSync(join(tmpdir(), "t3poll setup café space-"));
   const base = join(root, "t3");
   const home = join(root, "poll");
-  const pkg = join(root, "package");
+  const native = launch === "native" || launch === "service";
+  const version = "0.0.43-nightly.20260916.1825";
+  const pkg =
+    launch === "service"
+      ? join(base, "runtime", "versions", version)
+      : join(root, "package");
   mkdirSync(base);
   mkdirSync(join(pkg, "dist"), { recursive: true });
   writeFileSync(
@@ -44,7 +54,7 @@ async function fixture(
   const cli = join(pkg, "dist/bin.mjs");
   copyFileSync(resolve("tests/fixtures/local-t3.mjs"), cli);
   const link = join(root, "t3-bin");
-  if (launch !== "direct" && launch !== "native") {
+  if (launch !== "direct" && !native) {
     if (process.platform === "win32") symlinkSync(pkg, link, "junction");
     else symlinkSync(cli, link);
   }
@@ -55,7 +65,7 @@ async function fixture(
       ? join(command, "dist", "bin.mjs")
       : command;
   let executable = process.execPath;
-  if (launch === "native") {
+  if (native) {
     // A copied Node binary gives us a real process with the native `t3 serve`
     // argv layout, without requiring a T3 download or compiler in CI.
     executable = join(pkg, process.platform === "win32" ? "t3.exe" : "t3");
@@ -73,15 +83,15 @@ async function fixture(
       'process.argv.splice(1, 0, "auth");\n' + readFileSync(cli, "utf8"),
     );
   }
-  const child = spawn(
-    executable,
-    launch === "native" ? ["serve"] : [entry, "serve"],
-    {
-      cwd: root,
-      env: { ...process.env, T3CODE_HOME: base },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  if (launch === "service") {
+    rmSync(join(pkg, "package.json"));
+    writeFileSync(join(pkg, ".install-complete"), `${version}\n`);
+  }
+  const child = spawn(executable, native ? ["serve"] : [entry, "serve"], {
+    cwd: root,
+    env: { ...process.env, T3CODE_HOME: base },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   t.after(async () => {
     if (child.exitCode === null) {
       const stopped = once(child, "exit");
@@ -522,5 +532,42 @@ test("native discovery accepts a supported package architecture independently of
     writeFileSync(packagePath, JSON.stringify({ name }));
     assert.equal(inspectLocal(f.base), undefined, name);
   }
+  assert.equal(f.issued(), 0);
+});
+
+test("service runtime discovery and credential issuance without npm metadata", async (t) => {
+  const f = await fixture(t, "service");
+  const server = discover(f.config);
+  assert.equal(server.origin, f.origin);
+  assert.equal(server.native, true);
+  const cwd = process.cwd();
+  process.chdir(f.root);
+  try {
+    const c = await connection(f.config);
+    assert.deepEqual(await new T3(c.origin, c.tokenFile).threads(), []);
+    assert.equal(f.issued(), 1);
+  } finally {
+    process.chdir(cwd);
+  }
+});
+
+test("service discovery requires a matching install marker and home", async (t) => {
+  const f = await fixture(t, "service");
+  const marker = join(
+    f.base,
+    "runtime/versions/0.0.43-nightly.20260916.1825/.install-complete",
+  );
+  assert.ok(inspectLocal(f.base));
+  const other = join(f.root, "other");
+  mkdirSync(join(other, "userdata"), { recursive: true });
+  copyFileSync(
+    join(f.base, "userdata/server-runtime.json"),
+    join(other, "userdata/server-runtime.json"),
+  );
+  assert.equal(inspectLocal(other), undefined);
+  writeFileSync(marker, "wrong-version\n");
+  assert.equal(inspectLocal(f.base), undefined);
+  rmSync(marker);
+  assert.equal(inspectLocal(f.base), undefined);
   assert.equal(f.issued(), 0);
 });

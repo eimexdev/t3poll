@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   readFileSync,
   realpathSync,
@@ -107,21 +107,33 @@ export function inspectLocal(baseDir: string): LocalT3 | undefined {
       if (!hasOpenFile(state.pid, join(baseDir, "userdata/state.sqlite")))
         return;
     } else if (args[1] === "serve") {
-      // Native npm distributions run `t3 serve`, with no JS entrypoint.
-      // Verify the live executable against its platform package before using
-      // that same executable to issue or revoke credentials.
-      const pkg = JSON.parse(
-        readFileSync(join(dirname(executable), "package.json"), "utf8"),
-      );
-      // Setup's Node may run under emulation while T3 uses the host CPU.
-      if (
-        !["x64", "arm64"].some(
-          (arch) => pkg.name === `@t3code/t3-${process.platform}-${arch}`,
-        )
-      )
-        return;
+      // Native npm packages carry package.json. Service installs instead unpack
+      // a release archive into this home's runtime/versions/<version> directory.
       const binary = process.platform === "win32" ? "t3.exe" : "t3";
       if (executable !== join(dirname(executable), binary)) return;
+      const versionDir = dirname(executable);
+      const serviceRuntime =
+        existsSync(join(baseDir, "runtime", "versions")) &&
+        realpathSync(dirname(versionDir)) ===
+          realpathSync(join(baseDir, "runtime", "versions"));
+      if (serviceRuntime) {
+        if (
+          readFileSync(join(versionDir, ".install-complete"), "utf8").trim() !==
+          basename(versionDir)
+        )
+          return;
+      } else {
+        const pkg = JSON.parse(
+          readFileSync(join(versionDir, "package.json"), "utf8"),
+        );
+        // Setup's Node may run under emulation while T3 uses the host CPU.
+        if (
+          !["x64", "arm64"].some(
+            (arch) => pkg.name === `@t3code/t3-${process.platform}-${arch}`,
+          )
+        )
+          return;
+      }
       cli = executable;
     } else {
       cli = realpathSync(resolve(cwd, args[1]));

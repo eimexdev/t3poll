@@ -18,6 +18,12 @@ Supported platforms are Windows x64, macOS, and Linux with Node.js 24.10+. The i
 - A detached process survives ordinary MCP/CLI exit. OS session policies, containers, suspend, logout, or parent cgroup cleanup can still stop it. A later `watch` or `list` restarts it; no watchdog or login service is installed.
 - `stop` does not interrupt accepted turns. A request already in flight can complete after cancellation.
 
+## Service runtime discovery
+
+T3 service installs can run a standalone `t3` executable (`t3.exe` on Windows) from `<baseDir>/runtime/versions/<version>/` without npm package metadata. t3poll recognizes that layout only when `.install-complete` matches the version directory, and still verifies the live process and its data home. Native npm installations continue to use their platform package identity.
+
+Verified September 21, 2026 against the local Linux service running `0.0.43-nightly.20260916.1825`: `list --threads` discovered the server and read the authenticated thread list. Regression tests cover credential issuance without package metadata and rejection of missing/mismatched markers and mismatched homes.
+
 ## Stock release proof
 
 Install stock T3 in a disposable directory, outside this repository. Build its native dependencies if required by that release. Then run:
